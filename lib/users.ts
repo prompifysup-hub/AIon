@@ -1,26 +1,44 @@
-import fs from 'fs';
-import path from 'path';
+import { createClient } from '@supabase/supabase-js';
 import { User } from '@/types';
 
-const DATA_FILE = path.join(process.cwd(), 'data', 'users.json');
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
+);
 
-function ensureDataFile() {
-  const dir = path.dirname(DATA_FILE);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  if (!fs.existsSync(DATA_FILE)) fs.writeFileSync(DATA_FILE, '[]');
+export async function getUsers(): Promise<User[]> {
+  const { data } = await supabase.from('users').select('*');
+  return (data ?? []).map((u) => ({
+    id: u.id,
+    email: u.email,
+    name: u.name,
+    passwordHash: u.password_hash,
+    createdAt: u.created_at,
+  }));
 }
 
-export function getUsers(): User[] {
-  ensureDataFile();
-  return JSON.parse(fs.readFileSync(DATA_FILE, 'utf-8'));
+export async function getUserByEmail(email: string): Promise<User | undefined> {
+  const { data } = await supabase
+    .from('users')
+    .select('*')
+    .ilike('email', email)
+    .single();
+  if (!data) return undefined;
+  return {
+    id: data.id,
+    email: data.email,
+    name: data.name,
+    passwordHash: data.password_hash,
+    createdAt: data.created_at,
+  };
 }
 
-export function getUserByEmail(email: string): User | undefined {
-  return getUsers().find((u) => u.email.toLowerCase() === email.toLowerCase());
-}
-
-export function createUser(user: User): void {
-  const users = getUsers();
-  users.push(user);
-  fs.writeFileSync(DATA_FILE, JSON.stringify(users, null, 2));
+export async function createUser(user: User): Promise<void> {
+  await supabase.from('users').insert({
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    password_hash: user.passwordHash,
+    created_at: user.createdAt,
+  });
 }

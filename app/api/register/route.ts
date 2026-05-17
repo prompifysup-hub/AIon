@@ -12,12 +12,12 @@ export async function POST(req: Request) {
     if (password.length < 6) {
       return NextResponse.json({ error: 'Password must be at least 6 characters' }, { status: 400 });
     }
-    if (getUserByEmail(email)) {
+    if (await getUserByEmail(email)) {
       return NextResponse.json({ error: 'An account with this email already exists' }, { status: 400 });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
-    createUser({
+    await createUser({
       id: crypto.randomUUID(),
       email,
       name,
@@ -26,7 +26,9 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({ success: true });
-  } catch {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[register]', message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
