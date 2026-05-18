@@ -1369,55 +1369,36 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
   const themeIdx = topic.split('').reduce((s, c) => s + c.charCodeAt(0), 0) % THEMES.length;
   const T = THEMES[themeIdx];
 
-  // Pollinations flux-schnell image URL.
-  // Each slide gets a unique seed offset so every image is different.
-  const imgUrl = (slideTopic: string, w: number, h: number, slideIdx: number) => {
-    const cleaned = slideTopic.replace(/[^\w\s]/g, ' ').trim() || filename;
-    // Prefix with "photo of" so the subject is unambiguous; avoid generic
-    // "professional photography" which biases Pollinations toward human portraits
-    const prompt = encodeURIComponent(`photo of ${cleaned.slice(0, 80)}, photorealistic, vivid, sharp, no people`);
-    const base = cleaned.split('').reduce((s, c) => (s * 31 + c.charCodeAt(0)) & 0x7fffffff, 7);
-    const seed = (base + slideIdx * 1337) & 0x7fffffff;
-    return `https://image.pollinations.ai/prompt/${prompt}?width=${w}&height=${h}&model=flux-schnell&seed=${seed}&nologo=true&nofeed=true`;
-  };
-
-  const fetchImg = async (url: string): Promise<{ data: string; mime: string } | null> => {
+  // Fetch a real photo from Wikipedia for the cover — no AI generation,
+  // always relevant. Wikipedia's REST API is CORS-open so the browser can
+  // call it directly; we still proxy the actual image to avoid CORS in pptxgenjs.
+  const getCoverImage = async (searchTopic: string): Promise<{ data: string; mime: string } | null> => {
     try {
+      const term = encodeURIComponent(searchTopic.split(/\s+/).slice(0, 4).join('_'));
+      const wikiRes = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${term}`);
+      if (!wikiRes.ok) return null;
+      const wiki = await wikiRes.json();
+      const imageUrl = wiki.originalimage?.source ?? wiki.thumbnail?.source;
+      if (!imageUrl) return null;
       const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 20000);
-      const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(url)}`, { signal: ctrl.signal });
+      const t = setTimeout(() => ctrl.abort(), 12000);
+      const proxy = await fetch(`/api/proxy-image?url=${encodeURIComponent(imageUrl)}`, { signal: ctrl.signal });
       clearTimeout(t);
-      if (!res.ok) return null;
-      const json = await res.json();
+      if (!proxy.ok) return null;
+      const json = await proxy.json();
       return json.data ? { data: json.data, mime: json.mime ?? 'image/jpeg' } : null;
     } catch { return null; }
   };
 
-  // Build one URL per slide — cover uses the main topic, each content slide
-  // uses its own title so the image is specific to that slide's subject
-  const urls = parsed.map(({ title }, i) =>
-    imgUrl(i === 0 ? topic : (title || topic), i === 0 ? 1280 : 600, i === 0 ? 720 : 600, i)
-  );
-
-  // Fetch in batches of 3 — parallel within each batch, 400 ms gap between
-  // batches to avoid Pollinations rate-limiting while still being fast
-  const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
-  const allImgs: Array<{ data: string; mime: string } | null> = [];
-  for (let i = 0; i < urls.length; i += 3) {
-    if (i > 0) await sleep(400);
-    const results = await Promise.all(urls.slice(i, i + 3).map(fetchImg));
-    allImgs.push(...results);
-  }
+  const coverImg = await getCoverImage(topic);
 
   for (let idx = 0; idx < all.length; idx++) {
     const { title, body } = parsed[idx];
     const slide = pptx.addSlide();
     slide.background = { color: T.bg };
-    const imgD = allImgs[idx];
-
     if (idx === 0) {
-      // COVER — full-bleed photo + dark overlay + left text panel
-      if (imgD) slide.addImage({ data: `data:${imgD.mime};base64,${imgD.data}`, x: 0, y: 0, w: 13.33, h: 7.5, transparency: 60 });
+      // COVER — full-bleed Wikipedia photo + dark overlay + left text panel
+      if (coverImg) slide.addImage({ data: `data:${coverImg.mime};base64,${coverImg.data}`, x: 0, y: 0, w: 13.33, h: 7.5, transparency: 55 });
 
       slide.addShape('rect', { x: 0, y: 0, w: 9.5, h: 7.5, fill: { color: T.bg, transparency: 15 }, line: { width: 0 } });
       slide.addShape('rect', { x: 0, y: 0, w: 0.22, h: 7.5, fill: { color: T.accent }, line: { width: 0 } });
@@ -1433,11 +1414,8 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
       slide.addShape('rect', { x: 0, y: 7.26, w: 3.8, h: 0.24, fill: { color: T.accent, transparency: 55 }, line: { width: 0 } });
 
     } else {
-      // CONTENT — left text (65 %) + right sidebar image (35 %)
+      // CONTENT — left text (65 %) + right decorative sidebar (35 %)
       slide.addShape('rect', { x: 8.78, y: 0, w: 4.55, h: 7.5, fill: { color: T.panel }, line: { width: 0 } });
-
-      if (imgD) slide.addImage({ data: `data:${imgD.mime};base64,${imgD.data}`, x: 8.78, y: 0, w: 4.55, h: 3.4, transparency: 8 });
-
       slide.addShape('rect', { x: 8.78, y: 2.6, w: 4.55, h: 0.8, fill: { color: T.panel, transparency: 35 }, line: { width: 0 } });
       slide.addShape('ellipse', { x: 9.3, y: 4.4, w: 3.2, h: 3.2, fill: { color: T.accent, transparency: 91 }, line: { color: T.accent, width: 1, transparency: 82 } });
       slide.addShape('rect', { x: 9.55, y: 3.72, w: 3.0, h: 0.08, fill: { color: T.accent, transparency: 30 }, line: { width: 0 } });
