@@ -1180,20 +1180,23 @@ function FileBlock({ lang, content, theme }: {
   content: string;
   theme: ProviderTheme;
 }) {
-  const [downloading, setDownloading] = useState(false);
+  const [downloading, setDownloading] = useState<null | 'plain' | 'design'>(null);
   const meta = FILE_META[lang];
 
-  const download = async () => {
-    setDownloading(true);
+  const download = async (style: 'plain' | 'design' = 'plain') => {
+    setDownloading(style);
     try {
       if (lang === 'document') await downloadDocument(content);
       else if (lang === 'spreadsheet') await downloadSpreadsheet(content);
-      else if (lang === 'slides') await downloadSlides(content);
+      else if (lang === 'slides') {
+        if (style === 'design') await downloadSlidesDesign(content);
+        else await downloadSlides(content);
+      }
       else await downloadPDF(content);
     } catch (err) {
       console.error('Download failed', err);
     } finally {
-      setDownloading(false);
+      setDownloading(null);
     }
   };
 
@@ -1205,15 +1208,38 @@ function FileBlock({ lang, content, theme }: {
           <span>{meta.icon}</span>
           <span>{meta.label}</span>
         </div>
-        <button onClick={download} disabled={downloading}
-          className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs transition-opacity disabled:opacity-50"
-          style={{ background: theme.downloadBtnBg, color: theme.downloadBtnColor }}
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.8')}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
-        >
-          {downloading ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
-          {downloading ? 'Preparing…' : 'Download'}
-        </button>
+        {lang === 'slides' ? (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => download('plain')}
+              disabled={downloading !== null}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs transition-opacity disabled:opacity-50"
+              style={{ background: 'var(--ui-bg-card-hover)', color: 'var(--ui-text-2)' }}
+            >
+              {downloading === 'plain' ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+              Plain
+            </button>
+            <button
+              onClick={() => download('design')}
+              disabled={downloading !== null}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs transition-opacity disabled:opacity-50"
+              style={{ background: theme.downloadBtnBg, color: theme.downloadBtnColor }}
+            >
+              {downloading === 'design' ? <Loader2 size={12} className="animate-spin" /> : <span>✦</span>}
+              {downloading === 'design' ? 'Preparing…' : 'Design'}
+            </button>
+          </div>
+        ) : (
+          <button onClick={() => download()} disabled={downloading !== null}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs transition-opacity disabled:opacity-50"
+            style={{ background: theme.downloadBtnBg, color: theme.downloadBtnColor }}
+            onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.8')}
+            onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+          >
+            {downloading ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+            {downloading ? 'Preparing…' : 'Download'}
+          </button>
+        )}
       </div>
       <pre className="p-4 overflow-auto text-xs h-48" style={{ color: 'var(--ui-text-3)' }}>
         <code>{content}</code>
@@ -1307,6 +1333,98 @@ async function downloadSlides(content: string, filename = 'presentation') {
     }
   }
   await pptx.writeFile({ fileName: `${filename}.pptx` });
+}
+
+async function downloadSlidesDesign(content: string, filename = 'presentation') {
+  const pptxgenModule = await import('pptxgenjs');
+  const PptxGen = pptxgenModule.default;
+  const pptx = new PptxGen();
+  pptx.layout = 'LAYOUT_WIDE'; // 13.33" × 7.5"
+
+  // 5 rotating colour palettes
+  const PALETTES = [
+    { header: '4F46E5', accent: '818CF8', bg: '0F172A', sub: '94A3B8' },
+    { header: '0891B2', accent: '22D3EE', bg: '0A1628', sub: '7DD3FC' },
+    { header: '7C3AED', accent: 'C084FC', bg: '1A0A2E', sub: 'A78BFA' },
+    { header: 'E11D48', accent: 'FB7185', bg: '1C0A12', sub: 'FCA5A5' },
+    { header: '059669', accent: '34D399', bg: '0A1C12', sub: '6EE7B7' },
+  ];
+
+  const allSlides = content.split(/^---$/m).filter(s => s.trim());
+  const total = allSlides.length;
+
+  allSlides.forEach((slideContent, idx) => {
+    const slide = pptx.addSlide();
+    const pal = PALETTES[idx % PALETTES.length];
+    const lines = slideContent.trim().split('\n').filter(l => l.trim());
+    const titleLine = lines.find(l => /^#{1,2}\s/.test(l));
+    const title = titleLine ? titleLine.replace(/^#{1,2}\s/, '').trim() : '';
+    const bodyLines = lines
+      .filter(l => !/^#{1,2}\s/.test(l))
+      .map(l => l.replace(/^[-*•]\s*/, '').trim())
+      .filter(Boolean);
+
+    if (idx === 0) {
+      // ── Cover slide ────────────────────────────────────────────
+      slide.background = { color: pal.bg };
+      // Top colour band
+      slide.addShape('rect', { x: 0, y: 0, w: 13.33, h: 3.6, fill: { color: pal.header }, line: { width: 0 } });
+      // Thin accent stripe
+      slide.addShape('rect', { x: 0, y: 3.6, w: 13.33, h: 0.08, fill: { color: pal.accent }, line: { width: 0 } });
+      // Title
+      slide.addText(title || filename, {
+        x: 0.7, y: 0.4, w: 11.9, h: 2.9,
+        fontSize: 48, bold: true, color: 'FFFFFF', fontFace: 'Calibri',
+        align: 'left', valign: 'middle',
+      });
+      // Subtitle (join all body lines as one)
+      if (bodyLines.length > 0) {
+        slide.addText(bodyLines.join('  ·  '), {
+          x: 0.7, y: 4.0, w: 11.9, h: 1.6,
+          fontSize: 22, color: pal.sub, fontFace: 'Calibri', align: 'left',
+        });
+      }
+      // Decorative dots
+      [12.3, 12.65, 13.0].forEach(x => {
+        slide.addShape('ellipse', { x, y: 7.1, w: 0.16, h: 0.16, fill: { color: pal.accent }, line: { width: 0 } });
+      });
+      // Slide count
+      slide.addText(`1 / ${total}`, {
+        x: 0.5, y: 7.1, w: 2, h: 0.32, fontSize: 11, color: pal.accent, fontFace: 'Calibri',
+      });
+    } else {
+      // ── Content slide ──────────────────────────────────────────
+      slide.background = { color: '0F172A' };
+      // Header band
+      slide.addShape('rect', { x: 0, y: 0, w: 13.33, h: 1.3, fill: { color: pal.header }, line: { width: 0 } });
+      // Accent stripe below header
+      slide.addShape('rect', { x: 0, y: 1.3, w: 13.33, h: 0.06, fill: { color: pal.accent }, line: { width: 0 } });
+      // Title
+      slide.addText(title, {
+        x: 0.5, y: 0.1, w: 12.4, h: 1.1,
+        fontSize: 28, bold: true, color: 'FFFFFF', fontFace: 'Calibri', valign: 'middle',
+      });
+      // Bullets — coloured arrow + content text
+      if (bodyLines.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const textItems: any[] = bodyLines.flatMap((line, i) => [
+          { text: '▸  ', options: { fontSize: 15, color: pal.accent, bold: true, fontFace: 'Calibri' } },
+          { text: line + (i < bodyLines.length - 1 ? '\n' : ''), options: { fontSize: 20, color: 'CBD5E1', fontFace: 'Calibri' } },
+        ]);
+        slide.addText(textItems, { x: 0.7, y: 1.55, w: 12.0, h: 5.6, valign: 'top', paraSpaceAfter: 10 });
+      }
+      // Slide badge (bottom-right)
+      slide.addShape('rect', { x: 12.55, y: 7.1, w: 0.65, h: 0.28, fill: { color: pal.header }, line: { width: 0 } });
+      slide.addText(`${idx + 1}/${total}`, {
+        x: 12.55, y: 7.1, w: 0.65, h: 0.28,
+        fontSize: 9, color: 'FFFFFF', align: 'center', bold: true, fontFace: 'Calibri',
+      });
+      // Bottom accent bar
+      slide.addShape('rect', { x: 0, y: 7.38, w: 13.33, h: 0.12, fill: { color: pal.header }, line: { width: 0 } });
+    }
+  });
+
+  await pptx.writeFile({ fileName: `${filename}-design.pptx` });
 }
 
 async function downloadPDF(content: string, filename = 'document') {
