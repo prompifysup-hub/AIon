@@ -1381,7 +1381,7 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
   const all = content.split(/^---$/m).filter(s => s.trim());
   const total = all.length;
 
-  // Parse all slide titles up-front so we can pre-fetch images in parallel
+  // Parse all slide titles up-front
   const parsed = all.map(sc => {
     const lines = sc.trim().split('\n').filter(l => l.trim());
     const titleLine = lines.find(l => /^#{1,2}\s/.test(l));
@@ -1390,11 +1390,14 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
     return { title, body };
   });
 
-  // Pre-fetch all images via server proxy (parallel) to avoid CORS in pptxgenjs
-  const coverImgData = await fetchImg(stockUrl(parsed[0]?.title || filename, 1920, 1080));
-  const contentImgData = await Promise.all(
-    parsed.slice(1).map(({ title }) => fetchImg(stockUrl(title || filename, 800, 600)))
-  );
+  // Fetch exactly 2 images in parallel — Pollinations rate-limits many simultaneous
+  // requests from the same IP, so we use one cover + one content image (reused on
+  // all content slides). Both are AI-generated from the presentation topic.
+  const topic = parsed[0]?.title || filename;
+  const [coverImgData, sharedContentImg] = await Promise.all([
+    fetchImg(stockUrl(topic, 1280, 720)),
+    fetchImg(stockUrl(topic, 600, 600)),
+  ]);
 
   for (let idx = 0; idx < all.length; idx++) {
     const { title, body } = parsed[idx];
@@ -1484,11 +1487,10 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
         fill: { color: T.panel }, line: { width: 0 },
       });
 
-      // Sidebar photo — fetched server-side to avoid CORS
-      const sideImg = contentImgData[idx - 1];
-      if (sideImg) {
+      // Sidebar photo — topic-matched, shared across content slides
+      if (sharedContentImg) {
         slide.addImage({
-          data: `data:${sideImg.mime};base64,${sideImg.data}`,
+          data: `data:${sharedContentImg.mime};base64,${sharedContentImg.data}`,
           x: 8.78, y: 0, w: 4.55, h: 3.4, transparency: 8,
         });
       }
