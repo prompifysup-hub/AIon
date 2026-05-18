@@ -1,13 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
 import { User } from '@/types';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
-);
+// Lazy getter — createClient throws if URL/key are undefined, which would crash
+// every route at module-load time on Vercel if env vars aren't set yet.
+function db() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!
+  );
+}
 
 export async function getUsers(): Promise<User[]> {
-  const { data } = await supabase.from('users').select('*');
+  const { data } = await db().from('users').select('*');
   return (data ?? []).map((u) => ({
     id: u.id,
     email: u.email,
@@ -18,7 +22,7 @@ export async function getUsers(): Promise<User[]> {
 }
 
 export async function getUserByEmail(email: string): Promise<User | undefined> {
-  const { data } = await supabase
+  const { data } = await db()
     .from('users')
     .select('*')
     .ilike('email', email)
@@ -34,7 +38,7 @@ export async function getUserByEmail(email: string): Promise<User | undefined> {
 }
 
 export async function createUser(user: User): Promise<void> {
-  await supabase.from('users').insert({
+  await db().from('users').insert({
     id: user.id,
     email: user.email,
     name: user.name,

@@ -19,6 +19,7 @@ function sseDone() {
 }
 
 export async function POST(req: Request) {
+  try {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -77,6 +78,13 @@ export async function POST(req: Request) {
   return new Response(stream, {
     headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
   });
+  } catch (err) {
+    console.error('[/api/chat]', err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Internal server error' },
+      { status: 500 }
+    );
+  }
 }
 
 async function streamGemini(
