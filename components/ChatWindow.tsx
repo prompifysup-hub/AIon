@@ -1341,86 +1341,204 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
   const pptx = new PptxGen();
   pptx.layout = 'LAYOUT_WIDE'; // 13.33" × 7.5"
 
-  // 5 rotating colour palettes
-  const PALETTES = [
-    { header: '4F46E5', accent: '818CF8', bg: '0F172A', sub: '94A3B8' },
-    { header: '0891B2', accent: '22D3EE', bg: '0A1628', sub: '7DD3FC' },
-    { header: '7C3AED', accent: 'C084FC', bg: '1A0A2E', sub: 'A78BFA' },
-    { header: 'E11D48', accent: 'FB7185', bg: '1C0A12', sub: 'FCA5A5' },
-    { header: '059669', accent: '34D399', bg: '0A1C12', sub: '6EE7B7' },
-  ];
+  // ── Single cohesive dark theme ────────────────────────────────────
+  const T = {
+    bg:     '0D1117', // near-black base
+    panel:  '161B22', // slightly lighter panel
+    accent: '6366F1', // indigo primary
+    a2:     'A855F7', // purple secondary
+    text:   'F0F6FC', // near-white text
+    sub:    '8B949E', // muted gray
+    dim:    '21262D', // subtle border/divider
+  };
 
-  const allSlides = content.split(/^---$/m).filter(s => s.trim());
-  const total = allSlides.length;
+  // Seed for consistent picsum images keyed to this presentation
+  const seed = (filename.replace(/\W/g, '') || 'deck').slice(0, 12);
 
-  allSlides.forEach((slideContent, idx) => {
+  const all = content.split(/^---$/m).filter(s => s.trim());
+  const total = all.length;
+
+  all.forEach((sc, idx) => {
     const slide = pptx.addSlide();
-    const pal = PALETTES[idx % PALETTES.length];
-    const lines = slideContent.trim().split('\n').filter(l => l.trim());
+    slide.background = { color: T.bg };
+
+    const lines = sc.trim().split('\n').filter(l => l.trim());
     const titleLine = lines.find(l => /^#{1,2}\s/.test(l));
     const title = titleLine ? titleLine.replace(/^#{1,2}\s/, '').trim() : '';
-    const bodyLines = lines
+    const body = lines
       .filter(l => !/^#{1,2}\s/.test(l))
       .map(l => l.replace(/^[-*•]\s*/, '').trim())
       .filter(Boolean);
 
     if (idx === 0) {
-      // ── Cover slide ────────────────────────────────────────────
-      slide.background = { color: pal.bg };
-      // Top colour band
-      slide.addShape('rect', { x: 0, y: 0, w: 13.33, h: 3.6, fill: { color: pal.header }, line: { width: 0 } });
-      // Thin accent stripe
-      slide.addShape('rect', { x: 0, y: 3.6, w: 13.33, h: 0.08, fill: { color: pal.accent }, line: { width: 0 } });
+      // ════════════════════════════════════════════════════════════
+      //  COVER  — full-bleed photo + dark overlay + left text panel
+      // ════════════════════════════════════════════════════════════
+
+      // Background photo (picsum, consistent seed, dimmed)
+      slide.addImage({
+        path: `https://picsum.photos/seed/${seed}0/1920/1080`,
+        x: 0, y: 0, w: 13.33, h: 7.5, transparency: 60,
+      });
+
+      // Dark vignette — left two-thirds, for text legibility
+      slide.addShape('rect', {
+        x: 0, y: 0, w: 9.5, h: 7.5,
+        fill: { color: T.bg, transparency: 15 }, line: { width: 0 },
+      });
+
+      // Left accent bar
+      slide.addShape('rect', {
+        x: 0, y: 0, w: 0.22, h: 7.5,
+        fill: { color: T.accent }, line: { width: 0 },
+      });
+
+      // Large decorative ring — top-right, very subtle
+      slide.addShape('ellipse', {
+        x: 8.8, y: -1.8, w: 6.5, h: 6.5,
+        fill: { color: T.accent, transparency: 92 },
+        line: { color: T.accent, width: 1.5, transparency: 78 },
+      });
+      // Smaller filled circle — bottom-right corner
+      slide.addShape('ellipse', {
+        x: 11.2, y: 5.6, w: 2.4, h: 2.4,
+        fill: { color: T.a2, transparency: 86 }, line: { width: 0 },
+      });
+
       // Title
       slide.addText(title || filename, {
-        x: 0.7, y: 0.4, w: 11.9, h: 2.9,
-        fontSize: 48, bold: true, color: 'FFFFFF', fontFace: 'Calibri',
-        align: 'left', valign: 'middle',
+        x: 0.65, y: 1.4, w: 8.4, h: 2.6,
+        fontSize: 52, bold: true, color: T.text,
+        fontFace: 'Calibri', align: 'left', valign: 'middle',
       });
-      // Subtitle (join all body lines as one)
-      if (bodyLines.length > 0) {
-        slide.addText(bodyLines.join('  ·  '), {
-          x: 0.7, y: 4.0, w: 11.9, h: 1.6,
-          fontSize: 22, color: pal.sub, fontFace: 'Calibri', align: 'left',
+
+      // Dual accent divider line (indigo + purple segments)
+      slide.addShape('rect', {
+        x: 0.65, y: 4.2, w: 4.5, h: 0.07,
+        fill: { color: T.accent }, line: { width: 0 },
+      });
+      slide.addShape('rect', {
+        x: 5.25, y: 4.2, w: 1.8, h: 0.07,
+        fill: { color: T.a2 }, line: { width: 0 },
+      });
+
+      // Subtitle / body preview
+      if (body.length > 0) {
+        slide.addText(body.join('  ·  '), {
+          x: 0.65, y: 4.45, w: 8.2, h: 1.4,
+          fontSize: 20, color: T.sub, fontFace: 'Calibri', align: 'left',
         });
       }
-      // Decorative dots
-      [12.3, 12.65, 13.0].forEach(x => {
-        slide.addShape('ellipse', { x, y: 7.1, w: 0.16, h: 0.16, fill: { color: pal.accent }, line: { width: 0 } });
+
+      // Footer bar
+      slide.addShape('rect', {
+        x: 0, y: 7.26, w: 13.33, h: 0.24,
+        fill: { color: T.panel }, line: { width: 0 },
       });
-      // Slide count
+      slide.addShape('rect', {
+        x: 0, y: 7.26, w: 3.8, h: 0.24,
+        fill: { color: T.accent, transparency: 55 }, line: { width: 0 },
+      });
       slide.addText(`1 / ${total}`, {
-        x: 0.5, y: 7.1, w: 2, h: 0.32, fontSize: 11, color: pal.accent, fontFace: 'Calibri',
+        x: 12.0, y: 7.28, w: 1.2, h: 0.2,
+        fontSize: 10, color: T.sub, align: 'right', fontFace: 'Calibri',
       });
+
     } else {
-      // ── Content slide ──────────────────────────────────────────
-      slide.background = { color: '0F172A' };
-      // Header band
-      slide.addShape('rect', { x: 0, y: 0, w: 13.33, h: 1.3, fill: { color: pal.header }, line: { width: 0 } });
-      // Accent stripe below header
-      slide.addShape('rect', { x: 0, y: 1.3, w: 13.33, h: 0.06, fill: { color: pal.accent }, line: { width: 0 } });
+      // ════════════════════════════════════════════════════════════
+      //  CONTENT  — left text (65%) + right sidebar image (35%)
+      // ════════════════════════════════════════════════════════════
+
+      // Right sidebar panel background
+      slide.addShape('rect', {
+        x: 8.78, y: 0, w: 4.55, h: 7.5,
+        fill: { color: T.panel }, line: { width: 0 },
+      });
+
+      // Sidebar photo (upper portion)
+      slide.addImage({
+        path: `https://picsum.photos/seed/${seed}${idx}/800/600`,
+        x: 8.78, y: 0, w: 4.55, h: 3.4, transparency: 8,
+      });
+
+      // Fade strip between photo and lower panel
+      slide.addShape('rect', {
+        x: 8.78, y: 2.6, w: 4.55, h: 0.8,
+        fill: { color: T.panel, transparency: 35 }, line: { width: 0 },
+      });
+
+      // Decorative ring in lower sidebar
+      slide.addShape('ellipse', {
+        x: 9.3, y: 4.4, w: 3.2, h: 3.2,
+        fill: { color: T.accent, transparency: 91 },
+        line: { color: T.accent, width: 1, transparency: 82 },
+      });
+
+      // Big slide number as sidebar accent
+      slide.addText(`${idx + 1}`, {
+        x: 8.78, y: 3.5, w: 4.55, h: 1.5,
+        fontSize: 80, bold: true, color: T.accent,
+        fontFace: 'Calibri', align: 'center', valign: 'middle',
+      });
+      slide.addText(`of ${total}`, {
+        x: 8.78, y: 4.85, w: 4.55, h: 0.38,
+        fontSize: 13, color: T.sub, fontFace: 'Calibri', align: 'center',
+      });
+
+      // Thin vertical divider between content and sidebar
+      slide.addShape('rect', {
+        x: 8.75, y: 0, w: 0.03, h: 7.5,
+        fill: { color: T.accent, transparency: 60 }, line: { width: 0 },
+      });
+
+      // Top accent bar (content side only)
+      slide.addShape('rect', {
+        x: 0, y: 0, w: 8.78, h: 0.07,
+        fill: { color: T.accent }, line: { width: 0 },
+      });
+
       // Title
       slide.addText(title, {
-        x: 0.5, y: 0.1, w: 12.4, h: 1.1,
-        fontSize: 28, bold: true, color: 'FFFFFF', fontFace: 'Calibri', valign: 'middle',
+        x: 0.55, y: 0.16, w: 8.0, h: 1.0,
+        fontSize: 30, bold: true, color: T.text,
+        fontFace: 'Calibri', valign: 'middle',
       });
-      // Bullets — coloured arrow + content text
-      if (bodyLines.length > 0) {
+
+      // Title underline (two-tone)
+      slide.addShape('rect', {
+        x: 0.55, y: 1.18, w: 7.8, h: 0.05,
+        fill: { color: T.dim }, line: { width: 0 },
+      });
+      slide.addShape('rect', {
+        x: 0.55, y: 1.18, w: 2.6, h: 0.05,
+        fill: { color: T.accent }, line: { width: 0 },
+      });
+
+      // Bullet points
+      if (body.length > 0) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const textItems: any[] = bodyLines.flatMap((line, i) => [
-          { text: '▸  ', options: { fontSize: 15, color: pal.accent, bold: true, fontFace: 'Calibri' } },
-          { text: line + (i < bodyLines.length - 1 ? '\n' : ''), options: { fontSize: 20, color: 'CBD5E1', fontFace: 'Calibri' } },
+        const textItems: any[] = body.flatMap((line, i) => [
+          { text: '●  ', options: { fontSize: 9, color: T.accent, fontFace: 'Calibri' } },
+          {
+            text: line + (i < body.length - 1 ? '\n' : ''),
+            options: { fontSize: 19, color: T.text, fontFace: 'Calibri' },
+          },
         ]);
-        slide.addText(textItems, { x: 0.7, y: 1.55, w: 12.0, h: 5.6, valign: 'top', paraSpaceAfter: 10 });
+        slide.addText(textItems, {
+          x: 0.55, y: 1.38, w: 8.0, h: 5.8,
+          valign: 'top', paraSpaceAfter: 12,
+        });
       }
-      // Slide badge (bottom-right)
-      slide.addShape('rect', { x: 12.55, y: 7.1, w: 0.65, h: 0.28, fill: { color: pal.header }, line: { width: 0 } });
-      slide.addText(`${idx + 1}/${total}`, {
-        x: 12.55, y: 7.1, w: 0.65, h: 0.28,
-        fontSize: 9, color: 'FFFFFF', align: 'center', bold: true, fontFace: 'Calibri',
+
+      // Footer bar (content side)
+      slide.addShape('rect', {
+        x: 0, y: 7.26, w: 8.78, h: 0.24,
+        fill: { color: T.dim }, line: { width: 0 },
       });
-      // Bottom accent bar
-      slide.addShape('rect', { x: 0, y: 7.38, w: 13.33, h: 0.12, fill: { color: pal.header }, line: { width: 0 } });
+      slide.addShape('rect', {
+        x: 0, y: 7.26, w: 2.2, h: 0.24,
+        fill: { color: T.accent, transparency: 65 }, line: { width: 0 },
+      });
     }
   });
 
