@@ -24,13 +24,19 @@ const DOCS_FILE = path.join(DATA_DIR, 'documents.json');
 const EMB_DIR = path.join(DATA_DIR, 'embeddings');
 
 function ensureDirs() {
-  if (!fs.existsSync(EMB_DIR)) fs.mkdirSync(EMB_DIR, { recursive: true });
-  if (!fs.existsSync(DOCS_FILE)) fs.writeFileSync(DOCS_FILE, '[]');
+  try {
+    if (!fs.existsSync(EMB_DIR)) fs.mkdirSync(EMB_DIR, { recursive: true });
+    if (!fs.existsSync(DOCS_FILE)) fs.writeFileSync(DOCS_FILE, '[]');
+  } catch { /* read-only filesystem (e.g. Vercel) — RAG disabled */ }
 }
 
 export function getDocs(): RagDocument[] {
-  ensureDirs();
-  return JSON.parse(fs.readFileSync(DOCS_FILE, 'utf-8'));
+  try {
+    ensureDirs();
+    return JSON.parse(fs.readFileSync(DOCS_FILE, 'utf-8'));
+  } catch {
+    return [];
+  }
 }
 
 export function saveDocMeta(doc: RagDocument) {
