@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback, startTransition, memo } from 'react';
+import { useState, useRef, useEffect, useCallback, startTransition, memo, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { Message, Attachment } from '@/types';
 import { Model, models, getModel, Provider } from '@/lib/models';
@@ -29,7 +29,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
   const { data: session } = useSession();
   const userId = session?.user?.email ?? '';
   const accentHex = useAccent();
-  const theme = getProviderTheme(provider, accentHex);
+  const theme = useMemo(() => getProviderTheme(provider, accentHex), [provider, accentHex]);
 
   const [messages, setMessages] = useState<Message[]>(conversation?.messages ?? []);
   const [modelId, setModelId] = useState<'fast' | 'balanced' | 'pro'>(conversation?.modelId ?? 'fast');
@@ -45,6 +45,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
   const [textareaFocused, setTextareaFocused] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [showStudy, setShowStudy] = useState(false);
+  const [showDocPicker, setShowDocPicker] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
 
   const convIdRef = useRef<string>(conversation?.id ?? crypto.randomUUID());
@@ -54,11 +55,13 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
   const studyPickerRef = useRef<HTMLDivElement>(null);
+  const docPickerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
   const programmaticScrollRef = useRef(false);
   const isScrollActiveRef = useRef(false);
+  const scrollThrottleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
 
@@ -98,6 +101,19 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
   const scrollToBottom = useCallback(() => {
     const el = scrollAreaRef.current;
     if (!el) return;
+    // Throttle during active streaming to prevent layout-thrash twitching
+    if (isScrollActiveRef.current) {
+      if (scrollThrottleRef.current) return;
+      scrollThrottleRef.current = setTimeout(() => {
+        scrollThrottleRef.current = null;
+        const el2 = scrollAreaRef.current;
+        if (!el2) return;
+        programmaticScrollRef.current = true;
+        el2.scrollTop = el2.scrollHeight;
+        requestAnimationFrame(() => { programmaticScrollRef.current = false; });
+      }, 120);
+      return;
+    }
     programmaticScrollRef.current = true;
     el.scrollTop = el.scrollHeight;
     requestAnimationFrame(() => { programmaticScrollRef.current = false; });
@@ -132,6 +148,9 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
       }
       if (studyPickerRef.current && !studyPickerRef.current.contains(e.target as Node)) {
         setShowStudy(false);
+      }
+      if (docPickerRef.current && !docPickerRef.current.contains(e.target as Node)) {
+        setShowDocPicker(false);
       }
     };
     document.addEventListener('mousedown', handler);
@@ -307,6 +326,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
         const decoder = new TextDecoder();
         let buffer = '';
         let fullText = '';
+        let rafId: number | null = null;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -323,11 +343,17 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
               if (parsed.error) { showError(parsed.error); return; }
               if (parsed.text) {
                 fullText += parsed.text;
-                startTransition(() => updateAssistant({ content: fullText }));
+                if (rafId === null) {
+                  rafId = requestAnimationFrame(() => {
+                    rafId = null;
+                    startTransition(() => updateAssistant({ content: fullText }));
+                  });
+                }
               }
             } catch { /* skip malformed chunk */ }
           }
         }
+        updateAssistant({ content: fullText });
 
         persistConversation(
           withAssistant.map((m) => (m.id === assistantId ? { ...m, content: fullText } : m)),
@@ -382,6 +408,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buf = '', full = '';
+      let rafId: number | null = null;
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -394,10 +421,19 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
           try {
             const p = JSON.parse(d);
             if (p.error) { update({ content: `⚠️ ${p.error}` }); return; }
-            if (p.text) { full += p.text; startTransition(() => update({ content: full })); }
+            if (p.text) {
+              full += p.text;
+              if (rafId === null) {
+                rafId = requestAnimationFrame(() => {
+                  rafId = null;
+                  startTransition(() => update({ content: full }));
+                });
+              }
+            }
           } catch { /* skip */ }
         }
       }
+      update({ content: full });
       persistConversation(
         withAssistant.map((m) => (m.id === assistantId ? { ...m, content: full } : m)),
         modelId,
@@ -609,18 +645,69 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
               <span>Image</span>
             </button>
 
-            {/* Docs */}
-            <button
-              onClick={() => setShowDocs(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors"
-              style={docCount > 0 ? { background: theme.docsActiveBg, color: theme.docsActiveColor }
-                : { background: 'var(--ui-bg-card)', color: 'var(--ui-text-3)' }}
-              onMouseEnter={(e) => { if (!docCount) e.currentTarget.style.background = 'var(--ui-bg-card-hover)'; }}
-              onMouseLeave={(e) => { if (!docCount) e.currentTarget.style.background = 'var(--ui-bg-card)'; }}
-            >
-              <BookOpen size={13} />
-              <span>Docs{docCount > 0 ? ` (${docCount})` : ''}</span>
-            </button>
+            {/* Docs / file generation picker */}
+            <div className="relative" ref={docPickerRef}>
+              <button
+                onClick={() => setShowDocPicker((v) => !v)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors"
+                style={showDocPicker ? {
+                  background: theme.imageActiveBg, color: theme.imageActiveColor,
+                  border: `1px solid ${theme.imageActiveBorder}`,
+                } : { background: 'var(--ui-bg-card)', color: 'var(--ui-text-3)', border: '1px solid transparent' }}
+                onMouseEnter={(e) => { if (!showDocPicker) e.currentTarget.style.background = 'var(--ui-bg-card-hover)'; }}
+                onMouseLeave={(e) => { if (!showDocPicker) e.currentTarget.style.background = 'var(--ui-bg-card)'; }}
+              >
+                <BookOpen size={13} />
+                <span>Docs</span>
+                <ChevronDown size={11} className={`transition-transform ${showDocPicker ? 'rotate-180' : ''}`} />
+              </button>
+              {showDocPicker && (
+                <div className="absolute bottom-full mb-2 left-0 rounded-xl border shadow-xl overflow-hidden min-w-52 z-20"
+                  style={{ background: 'var(--ui-bg-sidebar)', borderColor: 'var(--ui-border)' }}>
+                  {[
+                    { icon: '📄', label: 'Document', desc: 'Word-style .docx file',       prompt: 'Write a Word document about ' },
+                    { icon: '📊', label: 'Spreadsheet', desc: 'Excel-style .xlsx file',    prompt: 'Create a spreadsheet for ' },
+                    { icon: '📑', label: 'Presentation', desc: 'PowerPoint-style .pptx file', prompt: 'Create a PowerPoint presentation about ' },
+                    { icon: '📋', label: 'PDF', desc: 'PDF document',                       prompt: 'Write a PDF document about ' },
+                  ].map((item) => (
+                    <button
+                      key={item.label}
+                      onClick={() => {
+                        setInput(item.prompt);
+                        setShowDocPicker(false);
+                        requestAnimationFrame(() => { textareaRef.current?.focus(); autoResize(); });
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors"
+                      style={{ color: 'var(--ui-text-2)' }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <span className="text-base">{item.icon}</span>
+                      <div>
+                        <p className="font-medium text-sm" style={{ color: 'var(--ui-text-1)' }}>{item.label}</p>
+                        <p className="text-xs" style={{ color: 'var(--ui-text-3)' }}>{item.desc}</p>
+                      </div>
+                    </button>
+                  ))}
+                  <div className="border-t mx-2" style={{ borderColor: 'var(--ui-border)' }} />
+                  <button
+                    onClick={() => { setShowDocs(true); setShowDocPicker(false); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors"
+                    style={{ color: 'var(--ui-text-2)' }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <span className="text-base">⬆️</span>
+                    <div>
+                      <p className="font-medium text-sm" style={{ color: 'var(--ui-text-1)' }}>
+                        Upload to context{docCount > 0 ? ` (${docCount})` : ''}
+                      </p>
+                      <p className="text-xs" style={{ color: 'var(--ui-text-3)' }}>Add files for AI to reference</p>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
 
             {/* Study mode */}
             <div className="relative" ref={studyPickerRef}>
@@ -815,7 +902,7 @@ function EmptyState({ model, theme, onSend }: { model: Model; theme: ProviderThe
   );
 }
 
-function MessageBubble({ message, modelIcon, theme, onRegenerate }: {
+const MessageBubble = memo(function MessageBubble({ message, modelIcon, theme, onRegenerate }: {
   message: Message;
   modelIcon: string;
   theme: ProviderTheme;
@@ -877,7 +964,7 @@ function MessageBubble({ message, modelIcon, theme, onRegenerate }: {
       </div>
     </div>
   );
-}
+});
 
 function UserCopyButton({ content, theme }: { content: string; theme: ProviderTheme }) {
   const [copied, setCopied] = useState(false);
@@ -1015,7 +1102,7 @@ function CodeCopyButton({ content, theme }: { content: string; theme: ProviderTh
   );
 }
 
-function MarkdownContent({ content, theme }: { content: string; theme: ProviderTheme }) {
+const MarkdownContent = memo(function MarkdownContent({ content, theme }: { content: string; theme: ProviderTheme }) {
   return (
     <ReactMarkdown
       components={{
@@ -1079,7 +1166,7 @@ function MarkdownContent({ content, theme }: { content: string; theme: ProviderT
       {content}
     </ReactMarkdown>
   );
-}
+});
 
 const FILE_META = {
   document:    { icon: '📄', label: 'Word Document (.docx)' },
@@ -1128,7 +1215,7 @@ function FileBlock({ lang, content, theme }: {
           {downloading ? 'Preparing…' : 'Download'}
         </button>
       </div>
-      <pre className="p-4 overflow-x-auto text-xs max-h-48" style={{ color: 'var(--ui-text-3)' }}>
+      <pre className="p-4 overflow-auto text-xs h-48" style={{ color: 'var(--ui-text-3)' }}>
         <code>{content}</code>
       </pre>
     </div>

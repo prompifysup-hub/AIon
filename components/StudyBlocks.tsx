@@ -431,9 +431,16 @@ function sanitizeMermaid(raw: string): string {
 
 export function MermaidBlock({ code }: { code: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [debouncedCode, setDebouncedCode] = useState(code);
   const [svg, setSvg] = useState('');
   const [failed, setFailed] = useState(false);
   const idRef = useRef(`mmd-${Math.random().toString(36).slice(2, 9)}`);
+
+  // Debounce streaming chunks — only attempt render when code stops changing
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedCode(code), 350);
+    return () => clearTimeout(t);
+  }, [code]);
 
   useEffect(() => {
     let cancelled = false;
@@ -460,7 +467,7 @@ export function MermaidBlock({ code }: { code: string }) {
           attributeBackgroundColorOdd: '#151525',
         },
       });
-      mermaid.render(idRef.current, sanitizeMermaid(code.trim()))
+      mermaid.render(idRef.current, sanitizeMermaid(debouncedCode.trim()))
         .then(({ svg: s }) => {
           if (cancelled) return;
           // Guard: Mermaid may still embed error text in the SVG on some versions
@@ -473,7 +480,7 @@ export function MermaidBlock({ code }: { code: string }) {
         .catch(() => { if (!cancelled) setFailed(true); });
     });
     return () => { cancelled = true; };
-  }, [code]);
+  }, [debouncedCode]);
 
   const downloadSVG = () => {
     const blob = new Blob([svg], { type: 'image/svg+xml' });
