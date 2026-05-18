@@ -1369,23 +1369,13 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
   const themeIdx = topic.split('').reduce((s, c) => s + c.charCodeAt(0), 0) % THEMES.length;
   const T = THEMES[themeIdx];
 
-  // Fetch a real photo from Wikipedia for the cover — no AI generation,
-  // always relevant. Wikipedia's REST API is CORS-open so the browser can
-  // call it directly; we still proxy the actual image to avoid CORS in pptxgenjs.
+  // Fetch a real editorial photo server-side (avoids all CORS issues).
+  // Tries Wikipedia first, falls back to Unsplash Source.
   const getCoverImage = async (searchTopic: string): Promise<{ data: string; mime: string } | null> => {
     try {
-      const term = encodeURIComponent(searchTopic.split(/\s+/).slice(0, 4).join('_'));
-      const wikiRes = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${term}`);
-      if (!wikiRes.ok) return null;
-      const wiki = await wikiRes.json();
-      const imageUrl = wiki.originalimage?.source ?? wiki.thumbnail?.source;
-      if (!imageUrl) return null;
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 12000);
-      const proxy = await fetch(`/api/proxy-image?url=${encodeURIComponent(imageUrl)}`, { signal: ctrl.signal });
-      clearTimeout(t);
-      if (!proxy.ok) return null;
-      const json = await proxy.json();
+      const res = await fetch(`/api/cover-image?topic=${encodeURIComponent(searchTopic)}`);
+      if (!res.ok) return null;
+      const json = await res.json();
       return json.data ? { data: json.data, mime: json.mime ?? 'image/jpeg' } : null;
     } catch { return null; }
   };
