@@ -1352,8 +1352,16 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
     dim:    '21262D', // subtle border/divider
   };
 
-  // Seed for consistent picsum images keyed to this presentation
-  const seed = (filename.replace(/\W/g, '') || 'deck').slice(0, 12);
+  // Build a Pollinations image URL from topic keywords
+  const imgUrl = (topic: string, w = 1024, h = 768) => {
+    const keywords = topic
+      .split(/\s+/)
+      .filter(w => w.length > 3)
+      .slice(0, 5)
+      .join(' ');
+    const prompt = encodeURIComponent(`${keywords} professional photography high quality`);
+    return `https://image.pollinations.ai/prompt/${prompt}?width=${w}&height=${h}&nologo=true&nofeed=true`;
+  };
 
   const all = content.split(/^---$/m).filter(s => s.trim());
   const total = all.length;
@@ -1375,9 +1383,9 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
       //  COVER  — full-bleed photo + dark overlay + left text panel
       // ════════════════════════════════════════════════════════════
 
-      // Background photo (picsum, consistent seed, dimmed)
+      // Background photo — topic-aware via Pollinations, dimmed
       slide.addImage({
-        path: `https://picsum.photos/seed/${seed}0/1920/1080`,
+        path: imgUrl(title || filename, 1920, 1080),
         x: 0, y: 0, w: 13.33, h: 7.5, transparency: 60,
       });
 
@@ -1439,10 +1447,6 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
         x: 0, y: 7.26, w: 3.8, h: 0.24,
         fill: { color: T.accent, transparency: 55 }, line: { width: 0 },
       });
-      slide.addText(`1 / ${total}`, {
-        x: 12.0, y: 7.28, w: 1.2, h: 0.2,
-        fontSize: 10, color: T.sub, align: 'right', fontFace: 'Calibri',
-      });
 
     } else {
       // ════════════════════════════════════════════════════════════
@@ -1455,9 +1459,9 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
         fill: { color: T.panel }, line: { width: 0 },
       });
 
-      // Sidebar photo (upper portion)
+      // Sidebar photo — topic-aware via Pollinations
       slide.addImage({
-        path: `https://picsum.photos/seed/${seed}${idx}/800/600`,
+        path: imgUrl(title, 800, 600),
         x: 8.78, y: 0, w: 4.55, h: 3.4, transparency: 8,
       });
 
@@ -1474,15 +1478,18 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
         line: { color: T.accent, width: 1, transparency: 82 },
       });
 
-      // Big slide number as sidebar accent
-      slide.addText(`${idx + 1}`, {
-        x: 8.78, y: 3.5, w: 4.55, h: 1.5,
-        fontSize: 80, bold: true, color: T.accent,
-        fontFace: 'Calibri', align: 'center', valign: 'middle',
+      // Decorative accent bars where the slide number used to be
+      slide.addShape('rect', {
+        x: 9.55, y: 3.72, w: 3.0, h: 0.08,
+        fill: { color: T.accent, transparency: 30 }, line: { width: 0 },
       });
-      slide.addText(`of ${total}`, {
-        x: 8.78, y: 4.85, w: 4.55, h: 0.38,
-        fontSize: 13, color: T.sub, fontFace: 'Calibri', align: 'center',
+      slide.addShape('rect', {
+        x: 9.55, y: 3.96, w: 1.8, h: 0.08,
+        fill: { color: T.a2, transparency: 45 }, line: { width: 0 },
+      });
+      slide.addShape('rect', {
+        x: 9.55, y: 4.2, w: 2.4, h: 0.08,
+        fill: { color: T.accent, transparency: 60 }, line: { width: 0 },
       });
 
       // Thin vertical divider between content and sidebar
