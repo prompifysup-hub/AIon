@@ -1339,49 +1339,22 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
   const pptxgenModule = await import('pptxgenjs');
   const PptxGen = pptxgenModule.default;
   const pptx = new PptxGen();
-  pptx.layout = 'LAYOUT_WIDE'; // 13.33" × 7.5"
+  pptx.layout = 'LAYOUT_WIDE';
 
-  // ── Single cohesive dark theme ────────────────────────────────────
-  const T = {
-    bg:     '0D1117', // near-black base
-    panel:  '161B22', // slightly lighter panel
-    accent: '6366F1', // indigo primary
-    a2:     'A855F7', // purple secondary
-    text:   'F0F6FC', // near-white text
-    sub:    '8B949E', // muted gray
-    dim:    '21262D', // subtle border/divider
-  };
+  // 6 distinct professional themes — chosen by topic hash so every unique
+  // presentation topic gets its own consistent colour identity
+  const THEMES = [
+    { bg: '0D1117', panel: '161B22', accent: '6366F1', a2: 'A855F7', text: 'F0F6FC', sub: '8B949E', dim: '21262D' }, // indigo / purple
+    { bg: '051220', panel: '0A2035', accent: '0EA5E9', a2: '38BDF8', text: 'F0F9FF', sub: '94A3B8', dim: '0F3050' }, // sky blue
+    { bg: '071A12', panel: '0D2B1C', accent: '10B981', a2: '34D399', text: 'ECFDF5', sub: '6EE7B7', dim: '134E35' }, // emerald
+    { bg: '1A0800', panel: '2D1000', accent: 'F97316', a2: 'FB923C', text: 'FFF7ED', sub: 'FDBA74', dim: '431D00' }, // orange
+    { bg: '0F0A1E', panel: '1A1030', accent: 'A855F7', a2: 'E879F9', text: 'FAF5FF', sub: 'D8B4FE', dim: '2D1B4E' }, // violet
+    { bg: '12080A', panel: '200D10', accent: 'F43F5E', a2: 'FB7185', text: 'FFF1F2', sub: 'FCA5A5', dim: '3B1015' }, // rose
+  ];
 
-  // Pollinations flux-schnell: AI-generated image that matches the topic exactly.
-  // Deterministic seed = same topic always produces the same image on re-download.
-  const stockUrl = (topic: string, w: number, h: number) => {
-    const cleaned = topic.replace(/[^\w\s]/g, ' ').trim() || filename;
-    const prompt = encodeURIComponent(
-      `${cleaned.slice(0, 100)}, professional photography, high quality, sharp focus`
-    );
-    const seed = cleaned.split('').reduce((s, c) => (s * 31 + c.charCodeAt(0)) & 0x7fffffff, 7);
-    return `https://image.pollinations.ai/prompt/${prompt}?width=${w}&height=${h}&model=flux-schnell&seed=${seed}&nologo=true&nofeed=true`;
-  };
-
-  // Fetch image through server proxy to avoid CORS, with client-side timeout
-  const fetchImg = async (url: string): Promise<{ data: string; mime: string } | null> => {
-    try {
-      const controller = new AbortController();
-      const t = setTimeout(() => controller.abort(), 20000);
-      const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(url)}`, { signal: controller.signal });
-      clearTimeout(t);
-      if (!res.ok) return null;
-      const json = await res.json();
-      return json.data ? { data: json.data, mime: json.mime ?? 'image/jpeg' } : null;
-    } catch {
-      return null;
-    }
-  };
-
+  // Parse slides first so we can derive the topic for theme + image prompts
   const all = content.split(/^---$/m).filter(s => s.trim());
   const total = all.length;
-
-  // Parse all slide titles up-front
   const parsed = all.map(sc => {
     const lines = sc.trim().split('\n').filter(l => l.trim());
     const titleLine = lines.find(l => /^#{1,2}\s/.test(l));
@@ -1390,192 +1363,103 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
     return { title, body };
   });
 
-  // Fetch exactly 2 images in parallel — Pollinations rate-limits many simultaneous
-  // requests from the same IP, so we use one cover + one content image (reused on
-  // all content slides). Both are AI-generated from the presentation topic.
   const topic = parsed[0]?.title || filename;
-  const [coverImgData, sharedContentImg] = await Promise.all([
-    fetchImg(stockUrl(topic, 1280, 720)),
-    fetchImg(stockUrl(topic, 600, 600)),
-  ]);
+
+  // Pick theme deterministically from topic — same topic always → same theme
+  const themeIdx = topic.split('').reduce((s, c) => s + c.charCodeAt(0), 0) % THEMES.length;
+  const T = THEMES[themeIdx];
+
+  // Pollinations flux-schnell image URL.
+  // Each slide gets a unique seed offset so every image is different.
+  const imgUrl = (slideTopic: string, w: number, h: number, slideIdx: number) => {
+    const cleaned = slideTopic.replace(/[^\w\s]/g, ' ').trim() || filename;
+    const prompt = encodeURIComponent(`${cleaned.slice(0, 100)}, professional photography, high quality`);
+    const base = cleaned.split('').reduce((s, c) => (s * 31 + c.charCodeAt(0)) & 0x7fffffff, 7);
+    const seed = (base + slideIdx * 1337) & 0x7fffffff;
+    return `https://image.pollinations.ai/prompt/${prompt}?width=${w}&height=${h}&model=flux-schnell&seed=${seed}&nologo=true&nofeed=true`;
+  };
+
+  const fetchImg = async (url: string): Promise<{ data: string; mime: string } | null> => {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 20000);
+      const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(url)}`, { signal: ctrl.signal });
+      clearTimeout(t);
+      if (!res.ok) return null;
+      const json = await res.json();
+      return json.data ? { data: json.data, mime: json.mime ?? 'image/jpeg' } : null;
+    } catch { return null; }
+  };
+
+  // Build one URL per slide — cover uses the main topic, each content slide
+  // uses its own title so the image is specific to that slide's subject
+  const urls = parsed.map(({ title }, i) =>
+    imgUrl(i === 0 ? topic : (title || topic), i === 0 ? 1280 : 600, i === 0 ? 720 : 600, i)
+  );
+
+  // Fetch in batches of 3 — parallel within each batch, 400 ms gap between
+  // batches to avoid Pollinations rate-limiting while still being fast
+  const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+  const allImgs: Array<{ data: string; mime: string } | null> = [];
+  for (let i = 0; i < urls.length; i += 3) {
+    if (i > 0) await sleep(400);
+    const results = await Promise.all(urls.slice(i, i + 3).map(fetchImg));
+    allImgs.push(...results);
+  }
 
   for (let idx = 0; idx < all.length; idx++) {
     const { title, body } = parsed[idx];
     const slide = pptx.addSlide();
     slide.background = { color: T.bg };
+    const imgD = allImgs[idx];
 
     if (idx === 0) {
-      // ════════════════════════════════════════════════════════════
-      //  COVER  — full-bleed photo + dark overlay + left text panel
-      // ════════════════════════════════════════════════════════════
+      // COVER — full-bleed photo + dark overlay + left text panel
+      if (imgD) slide.addImage({ data: `data:${imgD.mime};base64,${imgD.data}`, x: 0, y: 0, w: 13.33, h: 7.5, transparency: 60 });
 
-      // Background photo — topic-aware, fetched server-side to avoid CORS
-      if (coverImgData) {
-        slide.addImage({
-          data: `data:${coverImgData.mime};base64,${coverImgData.data}`,
-          x: 0, y: 0, w: 13.33, h: 7.5, transparency: 60,
-        });
-      }
+      slide.addShape('rect', { x: 0, y: 0, w: 9.5, h: 7.5, fill: { color: T.bg, transparency: 15 }, line: { width: 0 } });
+      slide.addShape('rect', { x: 0, y: 0, w: 0.22, h: 7.5, fill: { color: T.accent }, line: { width: 0 } });
+      slide.addShape('ellipse', { x: 8.8, y: -1.8, w: 6.5, h: 6.5, fill: { color: T.accent, transparency: 92 }, line: { color: T.accent, width: 1.5, transparency: 78 } });
+      slide.addShape('ellipse', { x: 11.2, y: 5.6, w: 2.4, h: 2.4, fill: { color: T.a2, transparency: 86 }, line: { width: 0 } });
 
-      // Dark vignette — left two-thirds, for text legibility
-      slide.addShape('rect', {
-        x: 0, y: 0, w: 9.5, h: 7.5,
-        fill: { color: T.bg, transparency: 15 }, line: { width: 0 },
-      });
+      slide.addText(title || filename, { x: 0.65, y: 1.4, w: 8.4, h: 2.6, fontSize: 52, bold: true, color: T.text, fontFace: 'Calibri', align: 'left', valign: 'middle' });
+      slide.addShape('rect', { x: 0.65, y: 4.2, w: 4.5, h: 0.07, fill: { color: T.accent }, line: { width: 0 } });
+      slide.addShape('rect', { x: 5.25, y: 4.2, w: 1.8, h: 0.07, fill: { color: T.a2 }, line: { width: 0 } });
+      if (body.length > 0) slide.addText(body.join('  ·  '), { x: 0.65, y: 4.45, w: 8.2, h: 1.4, fontSize: 20, color: T.sub, fontFace: 'Calibri', align: 'left' });
 
-      // Left accent bar
-      slide.addShape('rect', {
-        x: 0, y: 0, w: 0.22, h: 7.5,
-        fill: { color: T.accent }, line: { width: 0 },
-      });
-
-      // Large decorative ring — top-right, very subtle
-      slide.addShape('ellipse', {
-        x: 8.8, y: -1.8, w: 6.5, h: 6.5,
-        fill: { color: T.accent, transparency: 92 },
-        line: { color: T.accent, width: 1.5, transparency: 78 },
-      });
-      // Smaller filled circle — bottom-right corner
-      slide.addShape('ellipse', {
-        x: 11.2, y: 5.6, w: 2.4, h: 2.4,
-        fill: { color: T.a2, transparency: 86 }, line: { width: 0 },
-      });
-
-      // Title
-      slide.addText(title || filename, {
-        x: 0.65, y: 1.4, w: 8.4, h: 2.6,
-        fontSize: 52, bold: true, color: T.text,
-        fontFace: 'Calibri', align: 'left', valign: 'middle',
-      });
-
-      // Dual accent divider line (indigo + purple segments)
-      slide.addShape('rect', {
-        x: 0.65, y: 4.2, w: 4.5, h: 0.07,
-        fill: { color: T.accent }, line: { width: 0 },
-      });
-      slide.addShape('rect', {
-        x: 5.25, y: 4.2, w: 1.8, h: 0.07,
-        fill: { color: T.a2 }, line: { width: 0 },
-      });
-
-      // Subtitle / body preview
-      if (body.length > 0) {
-        slide.addText(body.join('  ·  '), {
-          x: 0.65, y: 4.45, w: 8.2, h: 1.4,
-          fontSize: 20, color: T.sub, fontFace: 'Calibri', align: 'left',
-        });
-      }
-
-      // Footer bar
-      slide.addShape('rect', {
-        x: 0, y: 7.26, w: 13.33, h: 0.24,
-        fill: { color: T.panel }, line: { width: 0 },
-      });
-      slide.addShape('rect', {
-        x: 0, y: 7.26, w: 3.8, h: 0.24,
-        fill: { color: T.accent, transparency: 55 }, line: { width: 0 },
-      });
+      slide.addShape('rect', { x: 0, y: 7.26, w: 13.33, h: 0.24, fill: { color: T.panel }, line: { width: 0 } });
+      slide.addShape('rect', { x: 0, y: 7.26, w: 3.8, h: 0.24, fill: { color: T.accent, transparency: 55 }, line: { width: 0 } });
 
     } else {
-      // ════════════════════════════════════════════════════════════
-      //  CONTENT  — left text (65%) + right sidebar image (35%)
-      // ════════════════════════════════════════════════════════════
+      // CONTENT — left text (65 %) + right sidebar image (35 %)
+      slide.addShape('rect', { x: 8.78, y: 0, w: 4.55, h: 7.5, fill: { color: T.panel }, line: { width: 0 } });
 
-      // Right sidebar panel background
-      slide.addShape('rect', {
-        x: 8.78, y: 0, w: 4.55, h: 7.5,
-        fill: { color: T.panel }, line: { width: 0 },
-      });
+      if (imgD) slide.addImage({ data: `data:${imgD.mime};base64,${imgD.data}`, x: 8.78, y: 0, w: 4.55, h: 3.4, transparency: 8 });
 
-      // Sidebar photo — topic-matched, shared across content slides
-      if (sharedContentImg) {
-        slide.addImage({
-          data: `data:${sharedContentImg.mime};base64,${sharedContentImg.data}`,
-          x: 8.78, y: 0, w: 4.55, h: 3.4, transparency: 8,
-        });
-      }
+      slide.addShape('rect', { x: 8.78, y: 2.6, w: 4.55, h: 0.8, fill: { color: T.panel, transparency: 35 }, line: { width: 0 } });
+      slide.addShape('ellipse', { x: 9.3, y: 4.4, w: 3.2, h: 3.2, fill: { color: T.accent, transparency: 91 }, line: { color: T.accent, width: 1, transparency: 82 } });
+      slide.addShape('rect', { x: 9.55, y: 3.72, w: 3.0, h: 0.08, fill: { color: T.accent, transparency: 30 }, line: { width: 0 } });
+      slide.addShape('rect', { x: 9.55, y: 3.96, w: 1.8, h: 0.08, fill: { color: T.a2, transparency: 45 }, line: { width: 0 } });
+      slide.addShape('rect', { x: 9.55, y: 4.2, w: 2.4, h: 0.08, fill: { color: T.accent, transparency: 60 }, line: { width: 0 } });
 
-      // Fade strip between photo and lower panel
-      slide.addShape('rect', {
-        x: 8.78, y: 2.6, w: 4.55, h: 0.8,
-        fill: { color: T.panel, transparency: 35 }, line: { width: 0 },
-      });
+      slide.addShape('rect', { x: 8.75, y: 0, w: 0.03, h: 7.5, fill: { color: T.accent, transparency: 60 }, line: { width: 0 } });
+      slide.addShape('rect', { x: 0, y: 0, w: 8.78, h: 0.07, fill: { color: T.accent }, line: { width: 0 } });
 
-      // Decorative ring in lower sidebar
-      slide.addShape('ellipse', {
-        x: 9.3, y: 4.4, w: 3.2, h: 3.2,
-        fill: { color: T.accent, transparency: 91 },
-        line: { color: T.accent, width: 1, transparency: 82 },
-      });
+      slide.addText(title, { x: 0.55, y: 0.16, w: 8.0, h: 1.0, fontSize: 30, bold: true, color: T.text, fontFace: 'Calibri', valign: 'middle' });
+      slide.addShape('rect', { x: 0.55, y: 1.18, w: 7.8, h: 0.05, fill: { color: T.dim }, line: { width: 0 } });
+      slide.addShape('rect', { x: 0.55, y: 1.18, w: 2.6, h: 0.05, fill: { color: T.accent }, line: { width: 0 } });
 
-      // Decorative accent bars where the slide number used to be
-      slide.addShape('rect', {
-        x: 9.55, y: 3.72, w: 3.0, h: 0.08,
-        fill: { color: T.accent, transparency: 30 }, line: { width: 0 },
-      });
-      slide.addShape('rect', {
-        x: 9.55, y: 3.96, w: 1.8, h: 0.08,
-        fill: { color: T.a2, transparency: 45 }, line: { width: 0 },
-      });
-      slide.addShape('rect', {
-        x: 9.55, y: 4.2, w: 2.4, h: 0.08,
-        fill: { color: T.accent, transparency: 60 }, line: { width: 0 },
-      });
-
-      // Thin vertical divider between content and sidebar
-      slide.addShape('rect', {
-        x: 8.75, y: 0, w: 0.03, h: 7.5,
-        fill: { color: T.accent, transparency: 60 }, line: { width: 0 },
-      });
-
-      // Top accent bar (content side only)
-      slide.addShape('rect', {
-        x: 0, y: 0, w: 8.78, h: 0.07,
-        fill: { color: T.accent }, line: { width: 0 },
-      });
-
-      // Title
-      slide.addText(title, {
-        x: 0.55, y: 0.16, w: 8.0, h: 1.0,
-        fontSize: 30, bold: true, color: T.text,
-        fontFace: 'Calibri', valign: 'middle',
-      });
-
-      // Title underline (two-tone)
-      slide.addShape('rect', {
-        x: 0.55, y: 1.18, w: 7.8, h: 0.05,
-        fill: { color: T.dim }, line: { width: 0 },
-      });
-      slide.addShape('rect', {
-        x: 0.55, y: 1.18, w: 2.6, h: 0.05,
-        fill: { color: T.accent }, line: { width: 0 },
-      });
-
-      // Bullet points
       if (body.length > 0) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const textItems: any[] = body.flatMap((line, i) => [
           { text: '●  ', options: { fontSize: 9, color: T.accent, fontFace: 'Calibri' } },
-          {
-            text: line + (i < body.length - 1 ? '\n' : ''),
-            options: { fontSize: 19, color: T.text, fontFace: 'Calibri' },
-          },
+          { text: line + (i < body.length - 1 ? '\n' : ''), options: { fontSize: 19, color: T.text, fontFace: 'Calibri' } },
         ]);
-        slide.addText(textItems, {
-          x: 0.55, y: 1.38, w: 8.0, h: 5.8,
-          valign: 'top', paraSpaceAfter: 12,
-        });
+        slide.addText(textItems, { x: 0.55, y: 1.38, w: 8.0, h: 5.8, valign: 'top', paraSpaceAfter: 12 });
       }
 
-      // Footer bar (content side)
-      slide.addShape('rect', {
-        x: 0, y: 7.26, w: 8.78, h: 0.24,
-        fill: { color: T.dim }, line: { width: 0 },
-      });
-      slide.addShape('rect', {
-        x: 0, y: 7.26, w: 2.2, h: 0.24,
-        fill: { color: T.accent, transparency: 65 }, line: { width: 0 },
-      });
+      slide.addShape('rect', { x: 0, y: 7.26, w: 8.78, h: 0.24, fill: { color: T.dim }, line: { width: 0 } });
+      slide.addShape('rect', { x: 0, y: 7.26, w: 2.2, h: 0.24, fill: { color: T.accent, transparency: 65 }, line: { width: 0 } });
     }
   }
 
