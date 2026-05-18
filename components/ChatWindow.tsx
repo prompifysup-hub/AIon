@@ -1352,21 +1352,23 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
     dim:    '21262D', // subtle border/divider
   };
 
-  // Build a Pollinations image URL from topic keywords
-  const pollinationsUrl = (topic: string, w = 1024, h = 768) => {
-    const keywords = topic
+  // LoremFlickr: keyword-matched stock photos, served instantly from CDN
+  const stockUrl = (topic: string, w: number, h: number) => {
+    const kw = topic
       .split(/\s+/)
       .filter(word => word.length > 3)
-      .slice(0, 5)
-      .join(' ');
-    const prompt = encodeURIComponent(`${keywords} professional photography high quality`);
-    return `https://image.pollinations.ai/prompt/${prompt}?width=${w}&height=${h}&nologo=true&nofeed=true`;
+      .slice(0, 3)
+      .join(',') || 'professional';
+    return `https://loremflickr.com/${w}/${h}/${encodeURIComponent(kw)}`;
   };
 
-  // Fetch image through server proxy to avoid CORS, returns base64 string or null
+  // Fetch image through server proxy to avoid CORS, with client-side timeout
   const fetchImg = async (url: string): Promise<{ data: string; mime: string } | null> => {
     try {
-      const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(url)}`);
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 9000);
+      const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(url)}`, { signal: controller.signal });
+      clearTimeout(t);
       if (!res.ok) return null;
       const json = await res.json();
       return json.data ? { data: json.data, mime: json.mime ?? 'image/jpeg' } : null;
@@ -1388,9 +1390,9 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
   });
 
   // Pre-fetch all images via server proxy (parallel) to avoid CORS in pptxgenjs
-  const coverImgData = await fetchImg(pollinationsUrl(parsed[0]?.title || filename, 1920, 1080));
+  const coverImgData = await fetchImg(stockUrl(parsed[0]?.title || filename, 1920, 1080));
   const contentImgData = await Promise.all(
-    parsed.slice(1).map(({ title }) => fetchImg(pollinationsUrl(title || filename, 800, 600)))
+    parsed.slice(1).map(({ title }) => fetchImg(stockUrl(title || filename, 800, 600)))
   );
 
   for (let idx = 0; idx < all.length; idx++) {
