@@ -1373,7 +1373,9 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
   // Each slide gets a unique seed offset so every image is different.
   const imgUrl = (slideTopic: string, w: number, h: number, slideIdx: number) => {
     const cleaned = slideTopic.replace(/[^\w\s]/g, ' ').trim() || filename;
-    const prompt = encodeURIComponent(`${cleaned.slice(0, 100)}, professional photography, high quality`);
+    // Prefix with "photo of" so the subject is unambiguous; avoid generic
+    // "professional photography" which biases Pollinations toward human portraits
+    const prompt = encodeURIComponent(`photo of ${cleaned.slice(0, 80)}, photorealistic, vivid, sharp, no people`);
     const base = cleaned.split('').reduce((s, c) => (s * 31 + c.charCodeAt(0)) & 0x7fffffff, 7);
     const seed = (base + slideIdx * 1337) & 0x7fffffff;
     return `https://image.pollinations.ai/prompt/${prompt}?width=${w}&height=${h}&model=flux-schnell&seed=${seed}&nologo=true&nofeed=true`;
