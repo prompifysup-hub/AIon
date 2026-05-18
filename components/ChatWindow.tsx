@@ -1341,20 +1341,16 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
   const pptx = new PptxGen();
   pptx.layout = 'LAYOUT_WIDE';
 
-  // 6 distinct professional themes — chosen by topic hash so every unique
-  // presentation topic gets its own consistent colour identity
-  const THEMES = [
-    { bg: '0D1117', panel: '161B22', accent: '6366F1', a2: 'A855F7', text: 'F0F6FC', sub: '8B949E', dim: '21262D' }, // indigo / purple
-    { bg: '051220', panel: '0A2035', accent: '0EA5E9', a2: '38BDF8', text: 'F0F9FF', sub: '94A3B8', dim: '0F3050' }, // sky blue
-    { bg: '071A12', panel: '0D2B1C', accent: '10B981', a2: '34D399', text: 'ECFDF5', sub: '6EE7B7', dim: '134E35' }, // emerald
-    { bg: '1A0800', panel: '2D1000', accent: 'F97316', a2: 'FB923C', text: 'FFF7ED', sub: 'FDBA74', dim: '431D00' }, // orange
-    { bg: '0F0A1E', panel: '1A1030', accent: 'A855F7', a2: 'E879F9', text: 'FAF5FF', sub: 'D8B4FE', dim: '2D1B4E' }, // violet
-    { bg: '12080A', panel: '200D10', accent: 'F43F5E', a2: 'FB7185', text: 'FFF1F2', sub: 'FCA5A5', dim: '3B1015' }, // rose
-  ];
+  // HSL → hex helper
+  const hsl = (h: number, s: number, l: number): string => {
+    s /= 100; l /= 100;
+    const k = (n: number) => (n + h / 30) % 12;
+    const a = s * Math.min(l, 1 - l);
+    const f = (n: number) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    return [f(0), f(8), f(4)].map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
+  };
 
-  // Parse slides first so we can derive the topic for theme + image prompts
   const all = content.split(/^---$/m).filter(s => s.trim());
-  const total = all.length;
   const parsed = all.map(sc => {
     const lines = sc.trim().split('\n').filter(l => l.trim());
     const titleLine = lines.find(l => /^#{1,2}\s/.test(l));
@@ -1365,74 +1361,163 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
 
   const topic = parsed[0]?.title || filename;
 
-  // Hash the first 200 chars of raw content (not just title) so every unique
-  // presentation gets a distinct colour even when titles are generic
-  const themeIdx = Math.abs(
-    content.slice(0, 200).split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0)
-  ) % THEMES.length;
-  const T = THEMES[themeIdx];
+  // Hash raw content → unique hue (colour) + layout style per presentation
+  const rawHash = content.slice(0, 300).split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0);
+  const hue      = Math.abs(rawHash) % 360;
+  const styleIdx = (Math.abs(rawHash) >> 6) % 4; // 4 totally different layouts
 
-  // Fetch a real editorial photo server-side (avoids all CORS issues).
-  // Tries Wikipedia first, falls back to Unsplash Source.
-  const getCoverImage = async (searchTopic: string): Promise<{ data: string; mime: string } | null> => {
-    try {
-      const res = await fetch(`/api/cover-image?topic=${encodeURIComponent(searchTopic)}`);
-      if (!res.ok) return null;
-      const json = await res.json();
-      return json.data ? { data: json.data, mime: json.mime ?? 'image/jpeg' } : null;
-    } catch { return null; }
+  const T = {
+    bg:    hsl(hue, 28,  7),
+    panel: hsl(hue, 28, 12),
+    acc:   hsl(hue, 80, 58),
+    a2:    hsl((hue + 40) % 360, 74, 64),
+    text:  'F8FAFC',
+    sub:   hsl(hue, 22, 62),
+    dim:   hsl(hue, 22, 17),
   };
 
-  const coverImg = await getCoverImage(topic);
+  const coverImg = await (async (): Promise<{ data: string; mime: string } | null> => {
+    try {
+      const res = await fetch(`/api/cover-image?topic=${encodeURIComponent(topic)}`);
+      if (!res.ok) return null;
+      const j = await res.json();
+      return j.data ? { data: j.data, mime: j.mime ?? 'image/jpeg' } : null;
+    } catch { return null; }
+  })();
+
+  const img = coverImg ? `data:${coverImg.mime};base64,${coverImg.data}` : null;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const bullets = (slide: any, body: string[], x: number, y: number, w: number, h: number, fs = 18) => {
+    if (!body.length) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items: any[] = body.flatMap((ln, i) => [
+      { text: '▪  ', options: { fontSize: 8, color: T.acc, fontFace: 'Calibri' } },
+      { text: ln + (i < body.length - 1 ? '\n' : ''), options: { fontSize: fs, color: T.text, fontFace: 'Calibri' } },
+    ]);
+    slide.addText(items, { x, y, w, h, valign: 'top', paraSpaceAfter: 13 });
+  };
 
   for (let idx = 0; idx < all.length; idx++) {
     const { title, body } = parsed[idx];
     const slide = pptx.addSlide();
     slide.background = { color: T.bg };
+
     if (idx === 0) {
-      // COVER — full-bleed Wikipedia photo + dark overlay + left text panel
-      if (coverImg) slide.addImage({ data: `data:${coverImg.mime};base64,${coverImg.data}`, x: 0, y: 0, w: 13.33, h: 7.5, transparency: 35 });
+      /* ══════════════════════════════════════════════════════════════
+         COVER — 4 distinct layouts
+      ══════════════════════════════════════════════════════════════ */
 
-      slide.addShape('rect', { x: 0, y: 0, w: 9.5, h: 7.5, fill: { color: T.bg, transparency: 15 }, line: { width: 0 } });
-      slide.addShape('rect', { x: 0, y: 0, w: 0.22, h: 7.5, fill: { color: T.accent }, line: { width: 0 } });
-      slide.addShape('ellipse', { x: 8.8, y: -1.8, w: 6.5, h: 6.5, fill: { color: T.accent, transparency: 92 }, line: { color: T.accent, width: 1.5, transparency: 78 } });
-      slide.addShape('ellipse', { x: 11.2, y: 5.6, w: 2.4, h: 2.4, fill: { color: T.a2, transparency: 86 }, line: { width: 0 } });
+      if (styleIdx === 0) {
+        // Layout A — Editorial: image bleeds left, text panel floats centre-left
+        if (img) slide.addImage({ data: img, x: 0, y: 0, w: 13.33, h: 7.5, transparency: 30 });
+        slide.addShape('rect', { x: 0, y: 0, w: 9.2, h: 7.5, fill: { color: T.bg, transparency: 18 }, line: { width: 0 } });
+        slide.addShape('rect', { x: 0, y: 0, w: 0.28, h: 7.5, fill: { color: T.acc }, line: { width: 0 } });
+        slide.addShape('ellipse', { x: 8.6, y: -2, w: 7, h: 7, fill: { color: T.acc, transparency: 91 }, line: { color: T.acc, width: 2, transparency: 80 } });
+        slide.addShape('ellipse', { x: 11.2, y: 5.5, w: 2.8, h: 2.8, fill: { color: T.a2, transparency: 84 }, line: { width: 0 } });
+        slide.addText(title || filename, { x: 0.65, y: 1.3, w: 8.2, h: 2.8, fontSize: 54, bold: true, color: T.text, fontFace: 'Calibri', align: 'left', valign: 'middle' });
+        slide.addShape('rect', { x: 0.65, y: 4.3, w: 4.8, h: 0.09, fill: { color: T.acc }, line: { width: 0 } });
+        slide.addShape('rect', { x: 5.6, y: 4.3, w: 2.2, h: 0.09, fill: { color: T.a2 }, line: { width: 0 } });
+        if (body.length) slide.addText(body.join('  ·  '), { x: 0.65, y: 4.55, w: 8.2, h: 1.4, fontSize: 19, color: T.sub, fontFace: 'Calibri' });
+        slide.addShape('rect', { x: 0, y: 7.26, w: 13.33, h: 0.24, fill: { color: T.panel }, line: { width: 0 } });
+        slide.addShape('rect', { x: 0, y: 7.26, w: 4.2, h: 0.24, fill: { color: T.acc, transparency: 48 }, line: { width: 0 } });
 
-      slide.addText(title || filename, { x: 0.65, y: 1.4, w: 8.4, h: 2.6, fontSize: 52, bold: true, color: T.text, fontFace: 'Calibri', align: 'left', valign: 'middle' });
-      slide.addShape('rect', { x: 0.65, y: 4.2, w: 4.5, h: 0.07, fill: { color: T.accent }, line: { width: 0 } });
-      slide.addShape('rect', { x: 5.25, y: 4.2, w: 1.8, h: 0.07, fill: { color: T.a2 }, line: { width: 0 } });
-      if (body.length > 0) slide.addText(body.join('  ·  '), { x: 0.65, y: 4.45, w: 8.2, h: 1.4, fontSize: 20, color: T.sub, fontFace: 'Calibri', align: 'left' });
+      } else if (styleIdx === 1) {
+        // Layout B — Centered card: image full-bleed, frosted card floats centre
+        if (img) slide.addImage({ data: img, x: 0, y: 0, w: 13.33, h: 7.5, transparency: 18 });
+        slide.addShape('rect', { x: 0, y: 0, w: 13.33, h: 7.5, fill: { color: T.bg, transparency: 48 }, line: { width: 0 } });
+        slide.addShape('rect', { x: 1.8, y: 1.0, w: 9.73, h: 5.4, fill: { color: T.panel, transparency: 15 }, line: { color: T.acc, width: 2 } });
+        slide.addShape('rect', { x: 1.8, y: 1.0, w: 9.73, h: 0.2, fill: { color: T.acc }, line: { width: 0 } });
+        slide.addShape('rect', { x: 1.8, y: 1.0, w: 4.2, h: 0.2, fill: { color: T.a2 }, line: { width: 0 } });
+        slide.addText(title || filename, { x: 2.2, y: 1.5, w: 8.9, h: 2.6, fontSize: 50, bold: true, color: T.text, fontFace: 'Calibri', align: 'center', valign: 'middle' });
+        slide.addShape('rect', { x: 4.4, y: 4.2, w: 4.5, h: 0.08, fill: { color: T.acc }, line: { width: 0 } });
+        if (body.length) slide.addText(body.join('  ·  '), { x: 2.2, y: 4.45, w: 8.9, h: 1.3, fontSize: 17, color: T.sub, fontFace: 'Calibri', align: 'center' });
+        slide.addShape('rect', { x: 0, y: 7.26, w: 13.33, h: 0.24, fill: { color: T.panel }, line: { width: 0 } });
 
-      slide.addShape('rect', { x: 0, y: 7.26, w: 13.33, h: 0.24, fill: { color: T.panel }, line: { width: 0 } });
-      slide.addShape('rect', { x: 0, y: 7.26, w: 3.8, h: 0.24, fill: { color: T.accent, transparency: 55 }, line: { width: 0 } });
+      } else if (styleIdx === 2) {
+        // Layout C — Bold split: solid accent left panel, image right
+        slide.addShape('rect', { x: 0, y: 0, w: 5.4, h: 7.5, fill: { color: T.acc }, line: { width: 0 } });
+        if (img) slide.addImage({ data: img, x: 5.4, y: 0, w: 7.93, h: 7.5, transparency: 18 });
+        slide.addShape('rect', { x: 5.4, y: 0, w: 7.93, h: 7.5, fill: { color: T.bg, transparency: 38 }, line: { width: 0 } });
+        slide.addShape('rect', { x: 5.2, y: 0, w: 0.4, h: 7.5, fill: { color: T.a2, transparency: 25 }, line: { width: 0 } });
+        slide.addShape('ellipse', { x: 0.3, y: 0.3, w: 4.5, h: 4.5, fill: { color: 'FFFFFF', transparency: 90 }, line: { color: 'FFFFFF', width: 1.5, transparency: 78 } });
+        slide.addShape('ellipse', { x: 3.2, y: 5.6, w: 2.5, h: 2.5, fill: { color: 'FFFFFF', transparency: 85 }, line: { width: 0 } });
+        slide.addText(title || filename, { x: 0.35, y: 1.4, w: 4.7, h: 3.0, fontSize: 42, bold: true, color: 'FFFFFF', fontFace: 'Calibri', align: 'left', valign: 'middle' });
+        slide.addShape('rect', { x: 0.35, y: 4.65, w: 3.8, h: 0.09, fill: { color: 'FFFFFF', transparency: 40 }, line: { width: 0 } });
+        if (body.length) slide.addText(body.join('\n'), { x: 0.35, y: 4.9, w: 4.7, h: 1.8, fontSize: 15, color: 'FFFFFF', fontFace: 'Calibri' });
+        slide.addShape('rect', { x: 0, y: 7.26, w: 13.33, h: 0.24, fill: { color: T.panel }, line: { width: 0 } });
 
-    } else {
-      // CONTENT — left text (65 %) + right decorative sidebar (35 %)
-      slide.addShape('rect', { x: 8.78, y: 0, w: 4.55, h: 7.5, fill: { color: T.panel }, line: { width: 0 } });
-      slide.addShape('rect', { x: 8.78, y: 2.6, w: 4.55, h: 0.8, fill: { color: T.panel, transparency: 35 }, line: { width: 0 } });
-      slide.addShape('ellipse', { x: 9.3, y: 4.4, w: 3.2, h: 3.2, fill: { color: T.accent, transparency: 91 }, line: { color: T.accent, width: 1, transparency: 82 } });
-      slide.addShape('rect', { x: 9.55, y: 3.72, w: 3.0, h: 0.08, fill: { color: T.accent, transparency: 30 }, line: { width: 0 } });
-      slide.addShape('rect', { x: 9.55, y: 3.96, w: 1.8, h: 0.08, fill: { color: T.a2, transparency: 45 }, line: { width: 0 } });
-      slide.addShape('rect', { x: 9.55, y: 4.2, w: 2.4, h: 0.08, fill: { color: T.accent, transparency: 60 }, line: { width: 0 } });
-
-      slide.addShape('rect', { x: 8.75, y: 0, w: 0.03, h: 7.5, fill: { color: T.accent, transparency: 60 }, line: { width: 0 } });
-      slide.addShape('rect', { x: 0, y: 0, w: 8.78, h: 0.07, fill: { color: T.accent }, line: { width: 0 } });
-
-      slide.addText(title, { x: 0.55, y: 0.16, w: 8.0, h: 1.0, fontSize: 30, bold: true, color: T.text, fontFace: 'Calibri', valign: 'middle' });
-      slide.addShape('rect', { x: 0.55, y: 1.18, w: 7.8, h: 0.05, fill: { color: T.dim }, line: { width: 0 } });
-      slide.addShape('rect', { x: 0.55, y: 1.18, w: 2.6, h: 0.05, fill: { color: T.accent }, line: { width: 0 } });
-
-      if (body.length > 0) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const textItems: any[] = body.flatMap((line, i) => [
-          { text: '●  ', options: { fontSize: 9, color: T.accent, fontFace: 'Calibri' } },
-          { text: line + (i < body.length - 1 ? '\n' : ''), options: { fontSize: 19, color: T.text, fontFace: 'Calibri' } },
-        ]);
-        slide.addText(textItems, { x: 0.55, y: 1.38, w: 8.0, h: 5.8, valign: 'top', paraSpaceAfter: 12 });
+      } else {
+        // Layout D — Top banner: image strip at top, large title below
+        if (img) slide.addImage({ data: img, x: 0, y: 0, w: 13.33, h: 3.3, transparency: 18 });
+        slide.addShape('rect', { x: 0, y: 0, w: 13.33, h: 3.3, fill: { color: T.acc, transparency: 58 }, line: { width: 0 } });
+        slide.addShape('ellipse', { x: 10.8, y: -1.2, w: 4.8, h: 4.8, fill: { color: 'FFFFFF', transparency: 93 }, line: { color: 'FFFFFF', width: 1.5, transparency: 85 } });
+        slide.addShape('rect', { x: 0, y: 3.28, w: 13.33, h: 0.14, fill: { color: T.acc }, line: { width: 0 } });
+        slide.addShape('rect', { x: 0, y: 3.28, w: 5.5, h: 0.14, fill: { color: T.a2 }, line: { width: 0 } });
+        slide.addShape('rect', { x: 0, y: 3.42, w: 13.33, h: 4.08, fill: { color: T.bg }, line: { width: 0 } });
+        slide.addShape('rect', { x: 0, y: 3.42, w: 0.28, h: 4.08, fill: { color: T.acc }, line: { width: 0 } });
+        slide.addText(title || filename, { x: 0.55, y: 3.55, w: 12.4, h: 2.4, fontSize: 54, bold: true, color: T.text, fontFace: 'Calibri', align: 'left', valign: 'middle' });
+        if (body.length) slide.addText(body.join('  ·  '), { x: 0.55, y: 6.1, w: 12.4, h: 1.0, fontSize: 18, color: T.sub, fontFace: 'Calibri' });
+        slide.addShape('rect', { x: 0, y: 7.26, w: 13.33, h: 0.24, fill: { color: T.panel }, line: { width: 0 } });
+        slide.addShape('rect', { x: 0, y: 7.26, w: 4.5, h: 0.24, fill: { color: T.acc, transparency: 50 }, line: { width: 0 } });
       }
 
-      slide.addShape('rect', { x: 0, y: 7.26, w: 8.78, h: 0.24, fill: { color: T.dim }, line: { width: 0 } });
-      slide.addShape('rect', { x: 0, y: 7.26, w: 2.2, h: 0.24, fill: { color: T.accent, transparency: 65 }, line: { width: 0 } });
+    } else {
+      /* ══════════════════════════════════════════════════════════════
+         CONTENT — 4 distinct layouts (matching cover style)
+      ══════════════════════════════════════════════════════════════ */
+
+      if (styleIdx === 0) {
+        // Layout A — Right sidebar with decorative panel
+        slide.addShape('rect', { x: 8.78, y: 0, w: 4.55, h: 7.5, fill: { color: T.panel }, line: { width: 0 } });
+        slide.addShape('ellipse', { x: 9.1, y: 3.8, w: 3.6, h: 3.6, fill: { color: T.acc, transparency: 90 }, line: { color: T.acc, width: 1, transparency: 80 } });
+        slide.addShape('rect', { x: 9.5, y: 3.5, w: 3.2, h: 0.09, fill: { color: T.acc, transparency: 28 }, line: { width: 0 } });
+        slide.addShape('rect', { x: 9.5, y: 3.78, w: 2.0, h: 0.09, fill: { color: T.a2, transparency: 42 }, line: { width: 0 } });
+        slide.addShape('rect', { x: 9.5, y: 4.06, w: 2.7, h: 0.09, fill: { color: T.acc, transparency: 58 }, line: { width: 0 } });
+        slide.addShape('rect', { x: 8.75, y: 0, w: 0.03, h: 7.5, fill: { color: T.acc, transparency: 58 }, line: { width: 0 } });
+        slide.addShape('rect', { x: 0, y: 0, w: 8.78, h: 0.08, fill: { color: T.acc }, line: { width: 0 } });
+        slide.addText(title, { x: 0.55, y: 0.18, w: 8.0, h: 1.0, fontSize: 30, bold: true, color: T.text, fontFace: 'Calibri', valign: 'middle' });
+        slide.addShape('rect', { x: 0.55, y: 1.22, w: 7.8, h: 0.05, fill: { color: T.dim }, line: { width: 0 } });
+        slide.addShape('rect', { x: 0.55, y: 1.22, w: 2.8, h: 0.05, fill: { color: T.acc }, line: { width: 0 } });
+        bullets(slide, body, 0.55, 1.42, 7.9, 5.6);
+        slide.addShape('rect', { x: 0, y: 7.26, w: 8.78, h: 0.24, fill: { color: T.dim }, line: { width: 0 } });
+        slide.addShape('rect', { x: 0, y: 7.26, w: 2.5, h: 0.24, fill: { color: T.acc, transparency: 62 }, line: { width: 0 } });
+
+      } else if (styleIdx === 1) {
+        // Layout B — Full width, no sidebar, wide open feel
+        slide.addShape('rect', { x: 0, y: 0, w: 13.33, h: 0.12, fill: { color: T.acc }, line: { width: 0 } });
+        slide.addShape('rect', { x: 0, y: 0, w: 5.5, h: 0.12, fill: { color: T.a2 }, line: { width: 0 } });
+        slide.addText(title, { x: 0.65, y: 0.22, w: 12.0, h: 1.1, fontSize: 34, bold: true, color: T.text, fontFace: 'Calibri', valign: 'middle' });
+        slide.addShape('rect', { x: 0.65, y: 1.42, w: 12.0, h: 0.05, fill: { color: T.dim }, line: { width: 0 } });
+        slide.addShape('rect', { x: 0.65, y: 1.42, w: 3.8, h: 0.05, fill: { color: T.acc }, line: { width: 0 } });
+        bullets(slide, body, 0.65, 1.62, 11.8, 5.4);
+        slide.addShape('ellipse', { x: 11.2, y: 1.2, w: 2.8, h: 2.8, fill: { color: T.acc, transparency: 92 }, line: { color: T.acc, width: 1, transparency: 74 } });
+        slide.addShape('rect', { x: 0, y: 7.26, w: 13.33, h: 0.24, fill: { color: T.panel }, line: { width: 0 } });
+        slide.addShape('rect', { x: 0, y: 7.26, w: 3.2, h: 0.24, fill: { color: T.acc, transparency: 58 }, line: { width: 0 } });
+
+      } else if (styleIdx === 2) {
+        // Layout C — Bold left accent strip, editorial look
+        slide.addShape('rect', { x: 0, y: 0, w: 0.6, h: 7.5, fill: { color: T.acc }, line: { width: 0 } });
+        slide.addShape('rect', { x: 0.6, y: 0, w: 0.14, h: 7.5, fill: { color: T.a2, transparency: 45 }, line: { width: 0 } });
+        slide.addShape('rect', { x: 0.74, y: 0, w: 12.59, h: 0.06, fill: { color: T.dim }, line: { width: 0 } });
+        slide.addText(title, { x: 0.95, y: 0.1, w: 12.0, h: 1.1, fontSize: 32, bold: true, color: T.text, fontFace: 'Calibri', valign: 'middle' });
+        slide.addShape('rect', { x: 0.95, y: 1.28, w: 11.8, h: 0.05, fill: { color: T.dim }, line: { width: 0 } });
+        slide.addShape('rect', { x: 0.95, y: 1.28, w: 4.2, h: 0.05, fill: { color: T.acc }, line: { width: 0 } });
+        bullets(slide, body, 0.95, 1.48, 12.0, 5.8);
+        slide.addShape('rect', { x: 0, y: 7.26, w: 13.33, h: 0.24, fill: { color: T.panel }, line: { width: 0 } });
+
+      } else {
+        // Layout D — Top title band, content below
+        slide.addShape('rect', { x: 0, y: 0, w: 13.33, h: 1.35, fill: { color: T.panel }, line: { width: 0 } });
+        slide.addShape('rect', { x: 0, y: 0, w: 13.33, h: 0.1, fill: { color: T.acc }, line: { width: 0 } });
+        slide.addShape('rect', { x: 0, y: 1.25, w: 13.33, h: 0.1, fill: { color: T.dim }, line: { width: 0 } });
+        slide.addShape('rect', { x: 0, y: 1.25, w: 5.0, h: 0.1, fill: { color: T.a2, transparency: 38 }, line: { width: 0 } });
+        slide.addShape('ellipse', { x: 12.0, y: 0.12, w: 1.1, h: 1.1, fill: { color: T.acc, transparency: 72 }, line: { width: 0 } });
+        slide.addText(title, { x: 0.55, y: 0.12, w: 11.2, h: 1.1, fontSize: 30, bold: true, color: T.text, fontFace: 'Calibri', valign: 'middle' });
+        bullets(slide, body, 0.55, 1.55, 12.3, 5.5);
+        slide.addShape('rect', { x: 0, y: 7.26, w: 13.33, h: 0.24, fill: { color: T.panel }, line: { width: 0 } });
+        slide.addShape('rect', { x: 0, y: 7.26, w: 2.8, h: 0.24, fill: { color: T.acc, transparency: 58 }, line: { width: 0 } });
+      }
     }
   }
 
