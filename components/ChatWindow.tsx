@@ -1353,41 +1353,63 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
   };
 
   // Build a Pollinations image URL from topic keywords
-  const imgUrl = (topic: string, w = 1024, h = 768) => {
+  const pollinationsUrl = (topic: string, w = 1024, h = 768) => {
     const keywords = topic
       .split(/\s+/)
-      .filter(w => w.length > 3)
+      .filter(word => word.length > 3)
       .slice(0, 5)
       .join(' ');
     const prompt = encodeURIComponent(`${keywords} professional photography high quality`);
     return `https://image.pollinations.ai/prompt/${prompt}?width=${w}&height=${h}&nologo=true&nofeed=true`;
   };
 
+  // Fetch image through server proxy to avoid CORS, returns base64 string or null
+  const fetchImg = async (url: string): Promise<{ data: string; mime: string } | null> => {
+    try {
+      const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(url)}`);
+      if (!res.ok) return null;
+      const json = await res.json();
+      return json.data ? { data: json.data, mime: json.mime ?? 'image/jpeg' } : null;
+    } catch {
+      return null;
+    }
+  };
+
   const all = content.split(/^---$/m).filter(s => s.trim());
   const total = all.length;
 
-  all.forEach((sc, idx) => {
-    const slide = pptx.addSlide();
-    slide.background = { color: T.bg };
-
+  // Parse all slide titles up-front so we can pre-fetch images in parallel
+  const parsed = all.map(sc => {
     const lines = sc.trim().split('\n').filter(l => l.trim());
     const titleLine = lines.find(l => /^#{1,2}\s/.test(l));
     const title = titleLine ? titleLine.replace(/^#{1,2}\s/, '').trim() : '';
-    const body = lines
-      .filter(l => !/^#{1,2}\s/.test(l))
-      .map(l => l.replace(/^[-*•]\s*/, '').trim())
-      .filter(Boolean);
+    const body = lines.filter(l => !/^#{1,2}\s/.test(l)).map(l => l.replace(/^[-*•]\s*/, '').trim()).filter(Boolean);
+    return { title, body };
+  });
+
+  // Pre-fetch all images via server proxy (parallel) to avoid CORS in pptxgenjs
+  const coverImgData = await fetchImg(pollinationsUrl(parsed[0]?.title || filename, 1920, 1080));
+  const contentImgData = await Promise.all(
+    parsed.slice(1).map(({ title }) => fetchImg(pollinationsUrl(title || filename, 800, 600)))
+  );
+
+  for (let idx = 0; idx < all.length; idx++) {
+    const { title, body } = parsed[idx];
+    const slide = pptx.addSlide();
+    slide.background = { color: T.bg };
 
     if (idx === 0) {
       // ════════════════════════════════════════════════════════════
       //  COVER  — full-bleed photo + dark overlay + left text panel
       // ════════════════════════════════════════════════════════════
 
-      // Background photo — topic-aware via Pollinations, dimmed
-      slide.addImage({
-        path: imgUrl(title || filename, 1920, 1080),
-        x: 0, y: 0, w: 13.33, h: 7.5, transparency: 60,
-      });
+      // Background photo — topic-aware, fetched server-side to avoid CORS
+      if (coverImgData) {
+        slide.addImage({
+          data: `data:${coverImgData.mime};base64,${coverImgData.data}`,
+          x: 0, y: 0, w: 13.33, h: 7.5, transparency: 60,
+        });
+      }
 
       // Dark vignette — left two-thirds, for text legibility
       slide.addShape('rect', {
@@ -1459,11 +1481,14 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
         fill: { color: T.panel }, line: { width: 0 },
       });
 
-      // Sidebar photo — topic-aware via Pollinations
-      slide.addImage({
-        path: imgUrl(title, 800, 600),
-        x: 8.78, y: 0, w: 4.55, h: 3.4, transparency: 8,
-      });
+      // Sidebar photo — fetched server-side to avoid CORS
+      const sideImg = contentImgData[idx - 1];
+      if (sideImg) {
+        slide.addImage({
+          data: `data:${sideImg.mime};base64,${sideImg.data}`,
+          x: 8.78, y: 0, w: 4.55, h: 3.4, transparency: 8,
+        });
+      }
 
       // Fade strip between photo and lower panel
       slide.addShape('rect', {
@@ -1547,7 +1572,7 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
         fill: { color: T.accent, transparency: 65 }, line: { width: 0 },
       });
     }
-  });
+  }
 
   await pptx.writeFile({ fileName: `${filename}-design.pptx` });
 }
