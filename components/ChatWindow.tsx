@@ -986,9 +986,7 @@ const MessageBubble = memo(function MessageBubble({ message, modelIcon, theme, o
         {message.mediaType === 'image' && message.mediaUrl && (
           <GeneratedImage url={message.mediaUrl} theme={theme} />
         )}
-        {message.content && (
-          <MessageActions content={message.content} theme={theme} onRegenerate={onRegenerate} versionEntry={versionEntry} onNavigateVersion={onNavigateVersion} />
-        )}
+        <MessageActions content={message.content} theme={theme} onRegenerate={onRegenerate} versionEntry={versionEntry} onNavigateVersion={onNavigateVersion} />
       </div>
     </div>
   );
@@ -1076,17 +1074,22 @@ function MessageActions({ content, theme, onRegenerate, versionEntry, onNavigate
     setSpeaking(true);
   };
 
+  const hasAnything = !!content || !!onRegenerate || (versionEntry && versionEntry.versions.length > 1);
+  if (!hasAnything) return null;
+
   return (
     <div className="flex items-center gap-1 pt-1">
-      <button onClick={handleCopy}
-        className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-colors"
-        style={{ color: copied ? theme.primaryColor : 'var(--ui-text-3)' }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
-        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-      >
-        {copied ? <Check size={12} /> : <Copy size={12} />}
-        <span>{copied ? 'Copied' : 'Copy'}</span>
-      </button>
+      {content && (
+        <button onClick={handleCopy}
+          className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-colors"
+          style={{ color: copied ? theme.primaryColor : 'var(--ui-text-3)' }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
+          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+        >
+          {copied ? <Check size={12} /> : <Copy size={12} />}
+          <span>{copied ? 'Copied' : 'Copy'}</span>
+        </button>
+      )}
       {versionEntry && versionEntry.versions.length > 1 && (
         <div className="flex items-center gap-0.5">
           <button
@@ -1128,15 +1131,17 @@ function MessageActions({ content, theme, onRegenerate, versionEntry, onNavigate
           <span>Redo</span>
         </button>
       )}
-      <button onClick={handleSpeak}
-        className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-colors"
-        style={{ color: speaking ? theme.primaryColor : 'var(--ui-text-3)' }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
-        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-      >
-        {speaking ? <VolumeX size={12} /> : <Volume2 size={12} />}
-        <span>{speaking ? 'Stop' : 'Speak'}</span>
-      </button>
+      {content && (
+        <button onClick={handleSpeak}
+          className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-colors"
+          style={{ color: speaking ? theme.primaryColor : 'var(--ui-text-3)' }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
+          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+        >
+          {speaking ? <VolumeX size={12} /> : <Volume2 size={12} />}
+          <span>{speaking ? 'Stop' : 'Speak'}</span>
+        </button>
+      )}
     </div>
   );
 }
