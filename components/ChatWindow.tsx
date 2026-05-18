@@ -9,7 +9,7 @@ import { getProviderTheme, ProviderTheme } from '@/lib/providerThemes';
 import { useAccent } from '@/lib/accent';
 import {
   Send, StopCircle, BookOpen, Loader2, Image as ImageIcon,
-  ChevronDown, Paperclip, Download, Mic,
+  ChevronDown, ChevronLeft, ChevronRight, Paperclip, Download, Mic,
   Copy, Check, Volume2, VolumeX, GraduationCap, RotateCcw, X, FileText,
 } from 'lucide-react';
 import { ExamBlock, FlashcardBlock, MermaidBlock } from './StudyBlocks';
@@ -47,6 +47,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
   const [showStudy, setShowStudy] = useState(false);
   const [showDocPicker, setShowDocPicker] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [msgVersions, setMsgVersions] = useState<Map<string, { versions: string[]; idx: number }>>(new Map());
 
   const convIdRef = useRef<string>(conversation?.id ?? crypto.randomUUID());
   const convCreatedAtRef = useRef<string>(conversation?.createdAt ?? new Date().toISOString());
@@ -84,6 +85,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
     setIsThinking(false);
     setImageMode(false);
     setAttachments([]);
+    setMsgVersions(new Map());
     window.speechSynthesis?.cancel();
     recognitionRef.current?.stop();
     setIsListening(false);
@@ -371,19 +373,40 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
     [messages, isStreaming, modelId, provider, imageMode, persistConversation, attachments],
   );
 
+  const navigateVersion = useCallback((msgId: string, dir: -1 | 1) => {
+    setMsgVersions(prev => {
+      const entry = prev.get(msgId);
+      if (!entry) return prev;
+      const newIdx = Math.max(0, Math.min(entry.versions.length - 1, entry.idx + dir));
+      if (newIdx === entry.idx) return prev;
+      setMessages(msgs => msgs.map(m =>
+        m.id === msgId ? { ...m, content: entry.versions[newIdx] } : m
+      ));
+      return new Map(prev).set(msgId, { ...entry, idx: newIdx });
+    });
+  }, []);
+
   const regenerate = useCallback(async () => {
     if (isStreaming) return;
     autoScrollRef.current = true;
-    const base = messages[messages.length - 1]?.role === 'assistant'
-      ? messages.slice(0, -1)
-      : messages;
+    const lastMsg = messages[messages.length - 1];
+    const base = lastMsg?.role === 'assistant' ? messages.slice(0, -1) : messages;
     if (!base.length || base[base.length - 1].role !== 'user') return;
 
-    const assistantId = crypto.randomUUID();
-    const withAssistant: Message[] = [
-      ...base,
-      { id: assistantId, role: 'assistant', content: '', timestamp: new Date().toISOString() },
-    ];
+    // Reuse same ID so version history stays keyed to this slot
+    const assistantId = lastMsg?.role === 'assistant' ? lastMsg.id : crypto.randomUUID();
+    const currentContent = lastMsg?.role === 'assistant' ? lastMsg.content : '';
+
+    // Capture existing versions before streaming
+    const existingEntry = msgVersions.get(assistantId);
+    const prevVersions = existingEntry?.versions ?? (currentContent ? [currentContent] : []);
+    const versionsBeforeNew = prevVersions[prevVersions.length - 1] === currentContent
+      ? prevVersions
+      : [...prevVersions, currentContent];
+
+    const withAssistant: Message[] = lastMsg?.role === 'assistant'
+      ? messages.map(m => m.id === assistantId ? { ...m, content: '', timestamp: new Date().toISOString() } : m)
+      : [...messages, { id: assistantId, role: 'assistant', content: '', timestamp: new Date().toISOString() }];
     setMessages(withAssistant);
     setIsThinking(true);
     setIsStreaming(true);
@@ -434,6 +457,8 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
         }
       }
       update({ content: full });
+      const newVersions = [...versionsBeforeNew, full];
+      setMsgVersions(prev => new Map(prev).set(assistantId, { versions: newVersions, idx: newVersions.length - 1 }));
       persistConversation(
         withAssistant.map((m) => (m.id === assistantId ? { ...m, content: full } : m)),
         modelId,
@@ -446,7 +471,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
       setIsThinking(false);
       setIsStreaming(false);
     }
-  }, [messages, isStreaming, modelId, provider, persistConversation]);
+  }, [messages, isStreaming, modelId, provider, persistConversation, msgVersions]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
@@ -561,6 +586,8 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
                     ? regenerate
                     : undefined
                 }
+                versionEntry={msg.role === 'assistant' ? msgVersions.get(msg.id) : undefined}
+                onNavigateVersion={(dir) => navigateVersion(msg.id, dir)}
               />
             ))}
             {isThinking && (
@@ -902,11 +929,13 @@ function EmptyState({ model, theme, onSend }: { model: Model; theme: ProviderThe
   );
 }
 
-const MessageBubble = memo(function MessageBubble({ message, modelIcon, theme, onRegenerate }: {
+const MessageBubble = memo(function MessageBubble({ message, modelIcon, theme, onRegenerate, versionEntry, onNavigateVersion }: {
   message: Message;
   modelIcon: string;
   theme: ProviderTheme;
   onRegenerate?: () => void;
+  versionEntry?: { versions: string[]; idx: number };
+  onNavigateVersion?: (dir: -1 | 1) => void;
 }) {
   if (message.role === 'user') {
     return (
@@ -959,7 +988,7 @@ const MessageBubble = memo(function MessageBubble({ message, modelIcon, theme, o
           <GeneratedImage url={message.mediaUrl} theme={theme} />
         )}
         {message.content && (
-          <MessageActions content={message.content} theme={theme} onRegenerate={onRegenerate} />
+          <MessageActions content={message.content} theme={theme} onRegenerate={onRegenerate} versionEntry={versionEntry} onNavigateVersion={onNavigateVersion} />
         )}
       </div>
     </div>
@@ -986,10 +1015,12 @@ function UserCopyButton({ content, theme }: { content: string; theme: ProviderTh
   );
 }
 
-function MessageActions({ content, theme, onRegenerate }: {
+function MessageActions({ content, theme, onRegenerate, versionEntry, onNavigateVersion }: {
   content: string;
   theme: ProviderTheme;
   onRegenerate?: () => void;
+  versionEntry?: { versions: string[]; idx: number };
+  onNavigateVersion?: (dir: -1 | 1) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -1057,6 +1088,35 @@ function MessageActions({ content, theme, onRegenerate }: {
         {copied ? <Check size={12} /> : <Copy size={12} />}
         <span>{copied ? 'Copied' : 'Copy'}</span>
       </button>
+      {versionEntry && versionEntry.versions.length > 1 && (
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => onNavigateVersion?.(-1)}
+            disabled={versionEntry.idx === 0}
+            className="w-6 h-6 flex items-center justify-center rounded-lg text-xs transition-colors disabled:opacity-30"
+            style={{ color: 'var(--ui-text-3)' }}
+            onMouseEnter={(e) => { if (versionEntry.idx > 0) e.currentTarget.style.background = 'var(--ui-bg-card)'; }}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            title="Previous version"
+          >
+            <ChevronLeft size={13} />
+          </button>
+          <span className="text-xs px-0.5 tabular-nums" style={{ color: 'var(--ui-text-3)' }}>
+            {versionEntry.idx + 1}/{versionEntry.versions.length}
+          </span>
+          <button
+            onClick={() => onNavigateVersion?.(1)}
+            disabled={versionEntry.idx === versionEntry.versions.length - 1}
+            className="w-6 h-6 flex items-center justify-center rounded-lg text-xs transition-colors disabled:opacity-30"
+            style={{ color: 'var(--ui-text-3)' }}
+            onMouseEnter={(e) => { if (versionEntry.idx < versionEntry.versions.length - 1) e.currentTarget.style.background = 'var(--ui-bg-card)'; }}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            title="Next version"
+          >
+            <ChevronRight size={13} />
+          </button>
+        </div>
+      )}
       {onRegenerate && (
         <button onClick={onRegenerate}
           className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs transition-colors"
