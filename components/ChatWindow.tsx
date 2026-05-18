@@ -386,34 +386,33 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
     });
   }, []);
 
-  const regenerate = useCallback(async () => {
+  const regenerateMessage = useCallback(async (msgId: string) => {
     if (isStreaming) return;
-    autoScrollRef.current = true;
-    const lastMsg = messages[messages.length - 1];
-    const base = lastMsg?.role === 'assistant' ? messages.slice(0, -1) : messages;
+
+    const msgIdx = messages.findIndex(m => m.id === msgId);
+    if (msgIdx === -1) return;
+    const targetMsg = messages[msgIdx];
+    if (targetMsg.role !== 'assistant') return;
+
+    // Context = everything before this assistant message
+    const base = messages.slice(0, msgIdx);
     if (!base.length || base[base.length - 1].role !== 'user') return;
 
-    // Reuse same ID so version history stays keyed to this slot
-    const assistantId = lastMsg?.role === 'assistant' ? lastMsg.id : crypto.randomUUID();
-    const currentContent = lastMsg?.role === 'assistant' ? lastMsg.content : '';
+    // Auto-scroll only when regenerating the bottommost message
+    if (msgIdx === messages.length - 1) autoScrollRef.current = true;
 
-    // Capture existing versions before streaming
-    const existingEntry = msgVersions.get(assistantId);
-    const prevVersions = existingEntry?.versions ?? (currentContent ? [currentContent] : []);
-    const versionsBeforeNew = prevVersions[prevVersions.length - 1] === currentContent
-      ? prevVersions
-      : [...prevVersions, currentContent];
+    // Build full version list; if first regeneration, seed with original content
+    const existingEntry = msgVersions.get(msgId);
+    const allVersions = existingEntry?.versions ?? [targetMsg.content];
 
-    const withAssistant: Message[] = lastMsg?.role === 'assistant'
-      ? messages.map(m => m.id === assistantId ? { ...m, content: '', timestamp: new Date().toISOString() } : m)
-      : [...messages, { id: assistantId, role: 'assistant', content: '', timestamp: new Date().toISOString() }];
-    setMessages(withAssistant);
+    // Clear this message content for streaming
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: '' } : m));
     setIsThinking(true);
     setIsStreaming(true);
     abortRef.current = new AbortController();
 
     const update = (u: Partial<Message>) =>
-      setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, ...u } : m)));
+      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, ...u } : m));
 
     try {
       const res = await fetch('/api/chat', {
@@ -421,7 +420,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           modelId, provider,
-          messages: base.map((m) => ({ role: m.role, content: m.content })),
+          messages: base.map(m => ({ role: m.role, content: m.content })),
         }),
         signal: abortRef.current.signal,
       });
@@ -457,10 +456,10 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
         }
       }
       update({ content: full });
-      const newVersions = [...versionsBeforeNew, full];
-      setMsgVersions(prev => new Map(prev).set(assistantId, { versions: newVersions, idx: newVersions.length - 1 }));
+      const newVersions = [...allVersions, full];
+      setMsgVersions(prev => new Map(prev).set(msgId, { versions: newVersions, idx: newVersions.length - 1 }));
       persistConversation(
-        withAssistant.map((m) => (m.id === assistantId ? { ...m, content: full } : m)),
+        messages.map(m => m.id === msgId ? { ...m, content: full } : m),
         modelId,
       );
     } catch (err: unknown) {
@@ -575,15 +574,15 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
           <EmptyState model={model} theme={theme} onSend={sendMessage} />
         ) : (
           <div className="max-w-3xl mx-auto space-y-6">
-            {messages.map((msg, i) => (
+            {messages.map((msg) => (
               <MessageBubble
                 key={msg.id}
                 message={msg}
                 modelIcon={model.icon}
                 theme={theme}
                 onRegenerate={
-                  msg.role === 'assistant' && i === messages.length - 1 && !isStreaming
-                    ? regenerate
+                  msg.role === 'assistant' && !isStreaming
+                    ? () => regenerateMessage(msg.id)
                     : undefined
                 }
                 versionEntry={msg.role === 'assistant' ? msgVersions.get(msg.id) : undefined}
