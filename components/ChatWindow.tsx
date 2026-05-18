@@ -1365,8 +1365,11 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
 
   const topic = parsed[0]?.title || filename;
 
-  // Pick theme deterministically from topic — same topic always → same theme
-  const themeIdx = topic.split('').reduce((s, c) => s + c.charCodeAt(0), 0) % THEMES.length;
+  // Hash the first 200 chars of raw content (not just title) so every unique
+  // presentation gets a distinct colour even when titles are generic
+  const themeIdx = Math.abs(
+    content.slice(0, 200).split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0)
+  ) % THEMES.length;
   const T = THEMES[themeIdx];
 
   // Fetch a real editorial photo server-side (avoids all CORS issues).
@@ -1388,7 +1391,7 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
     slide.background = { color: T.bg };
     if (idx === 0) {
       // COVER — full-bleed Wikipedia photo + dark overlay + left text panel
-      if (coverImg) slide.addImage({ data: `data:${coverImg.mime};base64,${coverImg.data}`, x: 0, y: 0, w: 13.33, h: 7.5, transparency: 55 });
+      if (coverImg) slide.addImage({ data: `data:${coverImg.mime};base64,${coverImg.data}`, x: 0, y: 0, w: 13.33, h: 7.5, transparency: 35 });
 
       slide.addShape('rect', { x: 0, y: 0, w: 9.5, h: 7.5, fill: { color: T.bg, transparency: 15 }, line: { width: 0 } });
       slide.addShape('rect', { x: 0, y: 0, w: 0.22, h: 7.5, fill: { color: T.accent }, line: { width: 0 } });

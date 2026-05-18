@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-export const maxDuration = 25;
+export const maxDuration = 30;
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -13,37 +13,49 @@ export async function GET(req: Request) {
     return { data: Buffer.from(buf).toString('base64'), mime };
   };
 
-  // ── 1. Wikipedia editorial photo ─────────────────────────────────
+  const fetchImage = async (url: string, headers: Record<string, string> = {}) => {
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0', ...headers },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (res.ok && res.headers.get('content-type')?.startsWith('image/')) {
+        return await toB64(res);
+      }
+    } catch { /* fall through */ }
+    return null;
+  };
+
+  // ── 1. Wikipedia MediaWiki search API (finds images even for non-exact titles)
   try {
-    const term = encodeURIComponent(topic.split(/\s+/).slice(0, 4).join('_'));
-    const wiki = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${term}`, {
-      headers: { 'User-Agent': 'PolyChat/1.0 (https://github.com/Patcharada37778/PolyChat)' },
+    const mwUrl = `https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(topic)}&prop=pageimages&pithumbsize=1200&format=json&gsrlimit=1`;
+    const mwRes = await fetch(mwUrl, {
+      headers: { 'User-Agent': 'PolyChat/1.0' },
       signal: AbortSignal.timeout(8000),
     });
-    if (wiki.ok) {
-      const json = await wiki.json();
-      const imgUrl: string | undefined = json.originalimage?.source ?? json.thumbnail?.source;
+    if (mwRes.ok) {
+      const mwJson = await mwRes.json();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pages = Object.values((mwJson.query?.pages ?? {}) as Record<string, any>);
+      const imgUrl: string | undefined = pages[0]?.thumbnail?.source;
       if (imgUrl) {
-        const img = await fetch(imgUrl, {
-          headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://en.wikipedia.org/' },
-          signal: AbortSignal.timeout(10000),
-        });
-        if (img.ok) return NextResponse.json(await toB64(img));
+        const result = await fetchImage(imgUrl, { Referer: 'https://en.wikipedia.org/' });
+        if (result) return NextResponse.json(result);
       }
     }
   } catch { /* fall through */ }
 
-  // ── 2. Unsplash Source fallback (follows redirect to CDN image) ───
+  // ── 2. Unsplash Source (follows redirect to CDN image)
   try {
-    const kw = encodeURIComponent(topic.split(/\s+/).slice(0, 3).join(','));
-    const unsplash = await fetch(`https://source.unsplash.com/1280x720/?${kw}`, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (unsplash.ok && unsplash.headers.get('content-type')?.startsWith('image/')) {
-      return NextResponse.json(await toB64(unsplash));
-    }
+    const kw = topic.split(/\s+/).slice(0, 3).join(',');
+    const result = await fetchImage(`https://source.unsplash.com/1280x720/?${encodeURIComponent(kw)}`);
+    if (result) return NextResponse.json(result);
   } catch { /* fall through */ }
+
+  // ── 3. Picsum with topic-seeded number (always works, guaranteed image)
+  const seed = Math.abs(topic.split('').reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0));
+  const result = await fetchImage(`https://picsum.photos/seed/${seed}/1280/720`);
+  if (result) return NextResponse.json(result);
 
   return NextResponse.json({ error: 'No image found' }, { status: 404 });
 }
