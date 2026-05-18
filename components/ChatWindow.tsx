@@ -1352,21 +1352,22 @@ async function downloadSlidesDesign(content: string, filename = 'presentation') 
     dim:    '21262D', // subtle border/divider
   };
 
-  // LoremFlickr: keyword-matched stock photos, served instantly from CDN
+  // Pollinations flux-schnell: AI-generated image that matches the topic exactly.
+  // Deterministic seed = same topic always produces the same image on re-download.
   const stockUrl = (topic: string, w: number, h: number) => {
-    const kw = topic
-      .split(/\s+/)
-      .filter(word => word.length > 3)
-      .slice(0, 3)
-      .join(',') || 'professional';
-    return `https://loremflickr.com/${w}/${h}/${encodeURIComponent(kw)}`;
+    const cleaned = topic.replace(/[^\w\s]/g, ' ').trim() || filename;
+    const prompt = encodeURIComponent(
+      `${cleaned.slice(0, 100)}, professional photography, high quality, sharp focus`
+    );
+    const seed = cleaned.split('').reduce((s, c) => (s * 31 + c.charCodeAt(0)) & 0x7fffffff, 7);
+    return `https://image.pollinations.ai/prompt/${prompt}?width=${w}&height=${h}&model=flux-schnell&seed=${seed}&nologo=true&nofeed=true`;
   };
 
   // Fetch image through server proxy to avoid CORS, with client-side timeout
   const fetchImg = async (url: string): Promise<{ data: string; mime: string } | null> => {
     try {
       const controller = new AbortController();
-      const t = setTimeout(() => controller.abort(), 9000);
+      const t = setTimeout(() => controller.abort(), 20000);
       const res = await fetch(`/api/proxy-image?url=${encodeURIComponent(url)}`, { signal: controller.signal });
       clearTimeout(t);
       if (!res.ok) return null;

@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+export const maxDuration = 30;
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const url = searchParams.get('url');
@@ -8,7 +10,7 @@ export async function GET(req: Request) {
   try {
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0' },
-      signal: AbortSignal.timeout(7000),
+      signal: AbortSignal.timeout(18000),
     });
     if (!res.ok) return NextResponse.json({ error: `Upstream ${res.status}` }, { status: 502 });
     const buf = await res.arrayBuffer();
