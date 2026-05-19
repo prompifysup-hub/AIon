@@ -1,13 +1,12 @@
 'use client';
 
 import { Message } from '@/types';
-import { Provider } from '@/lib/models';
 
 export interface Conversation {
   id: string;
   title: string;
-  modelId: 'fast' | 'balanced' | 'pro';
-  provider: Provider;
+  modelId: string;   // OR model ID (e.g. 'google/gemini-2.0-flash-001') or legacy tier ('fast'|'balanced'|'pro')
+  provider: string;  // category (e.g. 'text') or legacy provider ('gemini'|'deepseek'|'qwen')
   messages: Message[];
   starred?: boolean;
   createdAt: string;

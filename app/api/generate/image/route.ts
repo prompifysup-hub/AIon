@@ -7,7 +7,9 @@ export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { prompt, imageData, imageMimeType } = await req.json();
+  const { prompt, imageData, imageMimeType, model: modelParam } = await req.json();
+  const pollinationsModel = ['flux', 'flux-schnell', 'turbo', 'flux-realism'].includes(modelParam)
+    ? modelParam : 'turbo';
   if (!prompt?.trim() && !imageData) {
     return NextResponse.json({ error: 'Prompt is required' }, { status: 400 });
   }
@@ -38,7 +40,7 @@ export async function POST(req: Request) {
   }
 
   const seed = Math.floor(Math.random() * 1000000);
-  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(finalPrompt)}?width=1024&height=1024&nologo=true&model=turbo&seed=${seed}`;
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(finalPrompt)}?width=1024&height=1024&nologo=true&model=${pollinationsModel}&seed=${seed}`;
 
   return NextResponse.json({ url });
 }

@@ -3,81 +3,117 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import OpenAI from 'openai';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { getModel, providerModelMap, Provider } from '@/lib/models';
+import { getModel, providerModelMap, Provider, SYSTEM_PROMPT } from '@/lib/models';
 import { retrieve, getDocs } from '@/lib/rag';
 
 const encoder = new TextEncoder();
 
-function sse(text: string) {
-  return encoder.encode(`data: ${JSON.stringify({ text })}\n\n`);
-}
-function sseError(msg: string) {
-  return encoder.encode(`data: ${JSON.stringify({ error: msg })}\n\n`);
-}
-function sseDone() {
-  return encoder.encode('data: [DONE]\n\n');
-}
+function sse(text: string) { return encoder.encode(`data: ${JSON.stringify({ text })}\n\n`); }
+function sseError(msg: string) { return encoder.encode(`data: ${JSON.stringify({ error: msg })}\n\n`); }
+function sseDone() { return encoder.encode('data: [DONE]\n\n'); }
+
+const LEGACY_TIERS = new Set(['fast', 'balanced', 'pro']);
 
 export async function POST(req: Request) {
   try {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const session = await getServerSession(authOptions);
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || '');
-  const deepseekClient = new OpenAI({
-    baseURL: 'https://api.deepseek.com',
-    apiKey: process.env.DEEPSEEK_API_KEY || 'placeholder',
-  });
-  const qwenClient = new OpenAI({
-    baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    apiKey: process.env.QWEN_API_KEY || 'placeholder',
-  });
+    const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || '');
+    const deepseekClient = new OpenAI({
+      baseURL: 'https://api.deepseek.com',
+      apiKey: process.env.DEEPSEEK_API_KEY || 'placeholder',
+    });
+    const qwenClient = new OpenAI({
+      baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      apiKey: process.env.QWEN_API_KEY || 'placeholder',
+    });
+    const openrouterClient = new OpenAI({
+      baseURL: 'https://openrouter.ai/api/v1',
+      apiKey: process.env.OPENROUTER_API_KEY || 'placeholder',
+      defaultHeaders: {
+        'HTTP-Referer': 'https://polychat.app',
+        'X-Title': 'PolyChat',
+      },
+    });
 
-  const { messages, modelId, provider = 'gemini', attachments = [] } = await req.json();
-  const model = getModel(modelId ?? 'fast');
-  const lastMessage = messages[messages.length - 1];
+    const { messages, modelId, provider = 'gemini', category, attachments = [] } = await req.json();
 
-  const now = new Date().toLocaleString('en-US', {
-    timeZone: 'Asia/Bangkok', dateStyle: 'full', timeStyle: 'short',
-  });
+    const now = new Date().toLocaleString('en-US', {
+      timeZone: 'Asia/Bangkok', dateStyle: 'full', timeStyle: 'short',
+    });
 
-  let ragSection = '';
-  if (getDocs().length > 0) {
-    const chunks = await retrieve(lastMessage.content);
-    if (chunks.length > 0) {
-      ragSection = '\n\n---\nRelevant document context:\n' +
-        chunks.map((c, i) => `[${i + 1}] ${c}`).join('\n\n') +
-        '\n---\nUse the above when relevant. Cite [1], [2], etc.';
-    }
-  }
-
-  const systemInstruction = `${model.systemPrompt}\n\nCurrent date/time: ${now} (ICT, Bangkok).${ragSection}`;
-  const actualModel = providerModelMap[provider as Provider]?.[model.id as 'fast' | 'balanced' | 'pro']
-    ?? providerModelMap.gemini[model.id as 'fast' | 'balanced' | 'pro'];
-
-  const stream = new ReadableStream({
-    async start(controller) {
-      try {
-        if (provider === 'deepseek') {
-          await streamOpenAICompat(controller, deepseekClient, messages, systemInstruction, actualModel, model.maxTokens, attachments, false);
-        } else if (provider === 'qwen') {
-          await streamOpenAICompat(controller, qwenClient, messages, systemInstruction, actualModel, model.maxTokens, attachments, false);
-        } else {
-          await streamGemini(controller, genAI, messages, systemInstruction, actualModel, model.maxTokens, attachments);
-        }
-        controller.enqueue(sseDone());
-        controller.close();
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Unknown error';
-        controller.enqueue(sseError(msg));
-        controller.close();
+    let ragSection = '';
+    const lastMessage = messages[messages.length - 1];
+    if (getDocs().length > 0) {
+      const chunks = await retrieve(lastMessage.content);
+      if (chunks.length > 0) {
+        ragSection = '\n\n---\nRelevant document context:\n' +
+          chunks.map((c: string, i: number) => `[${i + 1}] ${c}`).join('\n\n') +
+          '\n---\nUse the above when relevant. Cite [1], [2], etc.';
       }
-    },
-  });
+    }
 
-  return new Response(stream, {
-    headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
-  });
+    // ── New-style request: modelId is a full OpenRouter ID (contains '/')
+    if (modelId && !LEGACY_TIERS.has(modelId)) {
+      const systemInstruction = `${SYSTEM_PROMPT}\n\nCurrent date/time: ${now} (ICT, Bangkok).${ragSection}`;
+
+      const stream = new ReadableStream({
+        async start(controller) {
+          try {
+            await streamOpenAICompat(
+              controller,
+              openrouterClient,
+              messages,
+              systemInstruction,
+              modelId,
+              4096,
+              attachments,
+              true, // OpenRouter supports vision for capable models
+            );
+            controller.enqueue(sseDone());
+            controller.close();
+          } catch (err) {
+            controller.enqueue(sseError(err instanceof Error ? err.message : 'Unknown error'));
+            controller.close();
+          }
+        },
+      });
+
+      return new Response(stream, {
+        headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
+      });
+    }
+
+    // ── Legacy request: modelId is 'fast'|'balanced'|'pro'
+    const model = getModel(modelId ?? 'fast');
+    const legacyProvider = (provider as Provider) in providerModelMap ? (provider as Provider) : 'gemini';
+    const actualModel = providerModelMap[legacyProvider]?.[model.id as 'fast' | 'balanced' | 'pro']
+      ?? providerModelMap.gemini[model.id as 'fast' | 'balanced' | 'pro'];
+    const systemInstruction = `${model.systemPrompt}\n\nCurrent date/time: ${now} (ICT, Bangkok).${ragSection}`;
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          if (legacyProvider === 'deepseek') {
+            await streamOpenAICompat(controller, deepseekClient, messages, systemInstruction, actualModel, model.maxTokens, attachments, false);
+          } else if (legacyProvider === 'qwen') {
+            await streamOpenAICompat(controller, qwenClient, messages, systemInstruction, actualModel, model.maxTokens, attachments, false);
+          } else {
+            await streamGemini(controller, genAI, messages, systemInstruction, actualModel, model.maxTokens, attachments);
+          }
+          controller.enqueue(sseDone());
+          controller.close();
+        } catch (err) {
+          controller.enqueue(sseError(err instanceof Error ? err.message : 'Unknown error'));
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
+    });
   } catch (err) {
     console.error('[/api/chat]', err);
     return NextResponse.json(
@@ -116,20 +152,15 @@ async function streamGemini(
   });
   const chat = gemini.startChat({ history });
 
-  // Build multimodal parts for the last message
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const parts: any[] = [];
   let textContent = lastMessage.content || '...';
   for (const att of attachments) {
-    if (att.isText) {
-      textContent += `\n\n[Attached file: ${att.name}]\n${att.data}`;
-    }
+    if (att.isText) textContent += `\n\n[Attached file: ${att.name}]\n${att.data}`;
   }
   parts.push({ text: textContent });
   for (const att of attachments) {
-    if (!att.isText && att.data) {
-      parts.push({ inlineData: { mimeType: att.mimeType, data: att.data } });
-    }
+    if (!att.isText && att.data) parts.push({ inlineData: { mimeType: att.mimeType, data: att.data } });
   }
 
   const result = await chat.sendMessageStream(parts.length === 1 ? parts[0].text : parts);
@@ -163,7 +194,6 @@ async function streamOpenAICompat(
 
   const lastMessage = messages[messages.length - 1];
 
-  // Build last user content — text files appended inline, images as image_url only when supported
   let textExtra = '';
   const imageParts: OpenAI.Chat.ChatCompletionContentPart[] = [];
   for (const att of attachments) {

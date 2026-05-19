@@ -3,9 +3,9 @@
 import { useState, useRef, useEffect, useCallback, startTransition, memo, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { Message, Attachment } from '@/types';
-import { Model, models, getModel, Provider } from '@/lib/models';
+import { Category, AIModel, getCategoryInfo, getModelInfo } from '@/lib/models';
 import { Conversation, saveConversation } from '@/lib/history';
-import { getProviderTheme, ProviderTheme } from '@/lib/providerThemes';
+import { getCategoryTheme, ProviderTheme } from '@/lib/providerThemes';
 import { useAccent } from '@/lib/accent';
 import {
   Send, StopCircle, BookOpen, Loader2, Image as ImageIcon,
@@ -21,18 +21,21 @@ import { detectScriptLang, getBestVoice } from '@/lib/tts';
 
 interface Props {
   conversation: Conversation | null;
-  provider: Provider;
+  category: Category;
+  defaultModelId: string;
   onConversationUpdate: (conv: Conversation) => void;
 }
 
-export function ChatWindow({ conversation, provider, onConversationUpdate }: Props) {
+export function ChatWindow({ conversation, category, defaultModelId, onConversationUpdate }: Props) {
   const { data: session } = useSession();
   const userId = session?.user?.email ?? '';
   const accentHex = useAccent();
-  const theme = useMemo(() => getProviderTheme(provider, accentHex), [provider, accentHex]);
+  const catInfo = useMemo(() => getCategoryInfo(category), [category]);
+  const catColor = catInfo?.color ?? '#3B82F6';
+  const theme = useMemo(() => getCategoryTheme(catColor, accentHex), [catColor, accentHex]);
 
   const [messages, setMessages] = useState<Message[]>(conversation?.messages ?? []);
-  const [modelId, setModelId] = useState<'fast' | 'balanced' | 'pro'>(conversation?.modelId ?? 'fast');
+  const [modelId, setModelId] = useState<string>(conversation?.modelId ?? defaultModelId);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
@@ -66,7 +69,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
 
-  const model = getModel(modelId);
+  // Removed: const model = getModel(modelId); — now using catInfo directly
 
   useEffect(() => {
     if (conversation) {
@@ -203,14 +206,14 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
   }, [isListening]);
 
   const persistConversation = useCallback(
-    (msgs: Message[], mid: 'fast' | 'balanced' | 'pro') => {
+    (msgs: Message[], mid: string) => {
       const title = msgs.find((m) => m.role === 'user')?.content.slice(0, 60) ?? 'New conversation';
       const now = new Date().toISOString();
       const conv: Conversation = {
         id: convIdRef.current,
         title,
         modelId: mid,
-        provider,
+        provider: category,
         messages: msgs,
         createdAt: convCreatedAtRef.current,
         updatedAt: now,
@@ -219,7 +222,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
       window.dispatchEvent(new Event('aion:history'));
       onConversationUpdate(conv);
     },
-    [onConversationUpdate, provider, userId],
+    [onConversationUpdate, category, userId],
   );
 
   const sendMessage = useCallback(
@@ -268,7 +271,9 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
       const trimmed = content.trim();
       const hasTextAttachment = pendingAttachments.some(a => a.isText);
       const imageAtt = pendingAttachments.find(a => !a.isText && a.mimeType.startsWith('image/'));
-      const isImageRequest = (imageMode || (IMAGE_VERB_RE.test(trimmed) && IMAGE_NOUN_RE.test(trimmed))) && !hasTextAttachment;
+      const selectedModelInfo = getModelInfo(category, modelId);
+      const isImageGenModel = selectedModelInfo?.isImageGen ?? false;
+      const isImageRequest = (imageMode || isImageGenModel || (IMAGE_VERB_RE.test(trimmed) && IMAGE_NOUN_RE.test(trimmed))) && !hasTextAttachment;
 
       if (isImageRequest) {
         try {
@@ -277,6 +282,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               prompt: content.trim(),
+              model: isImageGenModel ? modelId : undefined,
               imageData: imageAtt?.data,
               imageMimeType: imageAtt?.mimeType,
             }),
@@ -309,7 +315,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             modelId,
-            provider,
+            category,
             messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
             attachments: pendingAttachments,
           }),
@@ -370,7 +376,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
         setIsStreaming(false);
       }
     },
-    [messages, isStreaming, modelId, provider, imageMode, persistConversation, attachments],
+    [messages, isStreaming, modelId, category, imageMode, persistConversation, attachments],
   );
 
   const navigateVersion = useCallback((msgId: string, dir: -1 | 1) => {
@@ -419,7 +425,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          modelId, provider,
+          modelId, category,
           messages: base.map(m => ({ role: m.role, content: m.content })),
         }),
         signal: abortRef.current.signal,
@@ -470,7 +476,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
       setIsThinking(false);
       setIsStreaming(false);
     }
-  }, [messages, isStreaming, modelId, provider, persistConversation, msgVersions]);
+  }, [messages, isStreaming, modelId, category, persistConversation, msgVersions]);
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
@@ -571,14 +577,14 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
 
       <div ref={scrollAreaRef} onScroll={handleScrollArea} className="flex-1 overflow-y-auto px-4 py-6">
         {isEmpty ? (
-          <EmptyState model={model} theme={theme} onSend={sendMessage} />
+          <EmptyState catInfo={catInfo} theme={theme} onSend={sendMessage} />
         ) : (
           <div className="max-w-3xl mx-auto space-y-6">
             {messages.map((msg) => (
               <MessageBubble
                 key={msg.id}
                 message={msg}
-                modelIcon={model.icon}
+                modelIcon={catInfo?.models.find(m => m.id === modelId)?.icon ?? catInfo?.emoji ?? '🤖'}
                 theme={theme}
                 onRegenerate={
                   msg.role === 'assistant' && !isStreaming
@@ -593,7 +599,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
               <div className="flex gap-3">
                 <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0"
                   style={{ background: 'var(--ui-bg-card)' }}>
-                  {model.icon}
+                  {catInfo?.models.find(m => m.id === modelId)?.icon ?? catInfo?.emoji ?? '🤖'}
                 </div>
                 <div className="flex items-center gap-1 pt-2">
                   {theme.isRainbow ? (
@@ -629,14 +635,19 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
                 onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card-hover)')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
               >
-                <span>{model.icon}</span>
-                <span>{model.name}</span>
+                <span>{catInfo?.models.find(m => m.id === modelId)?.icon ?? catInfo?.emoji ?? '🤖'}</span>
+                <span className="max-w-[120px] truncate">{catInfo?.models.find(m => m.id === modelId)?.name ?? modelId}</span>
                 <ChevronDown size={13} className={`transition-transform ${showModelPicker ? 'rotate-180' : ''}`} />
               </button>
               {showModelPicker && (
-                <div className="absolute bottom-full mb-2 left-0 rounded-xl border shadow-xl overflow-hidden min-w-48 z-20"
+                <div className="absolute bottom-full mb-2 left-0 rounded-xl border shadow-xl overflow-hidden min-w-56 z-20"
                   style={{ background: 'var(--ui-bg-sidebar)', borderColor: 'var(--ui-border)' }}>
-                  {models.map((m) => (
+                  <div className="px-3 py-1.5 border-b" style={{ borderColor: 'var(--ui-border)' }}>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--ui-text-3)' }}>
+                      {catInfo?.label} Models
+                    </p>
+                  </div>
+                  {(catInfo?.models ?? []).map((m: AIModel) => (
                     <button key={m.id}
                       onClick={() => { setModelId(m.id); setShowModelPicker(false); }}
                       className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors"
@@ -645,11 +656,11 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
                       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                     >
                       <span>{m.icon}</span>
-                      <div className="flex-1">
-                        <p className="font-medium">{m.name}</p>
-                        <p className="text-xs" style={{ color: 'var(--ui-text-3)' }}>{m.description}</p>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{m.name}</p>
+                        <p className="text-xs truncate" style={{ color: 'var(--ui-text-3)' }}>{m.description}</p>
                       </div>
-                      {modelId === m.id && <span className="text-xs" style={{ color: theme.primaryColor }}>✓</span>}
+                      {modelId === m.id && <span className="text-xs shrink-0" style={{ color: theme.primaryColor }}>✓</span>}
                     </button>
                   ))}
                 </div>
@@ -855,7 +866,7 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
               onKeyDown={handleKeyDown}
               onFocus={() => setTextareaFocused(true)}
               onBlur={() => setTextareaFocused(false)}
-              placeholder={imageMode ? 'Describe the image you want…' : isListening ? 'Listening…' : attachments.length > 0 ? `Add a message or just send ${attachments.length} file(s)…` : `Message ${model.name}…`}
+              placeholder={imageMode ? 'Describe the image you want…' : isListening ? 'Listening…' : attachments.length > 0 ? `Add a message or just send ${attachments.length} file(s)…` : `Message ${catInfo?.models.find(m => m.id === modelId)?.name ?? catInfo?.label ?? 'AI'}…`}
               rows={1}
               className="flex-1 bg-transparent placeholder-gray-500 resize-none outline-none text-sm leading-relaxed max-h-48 py-1"
               style={{ color: 'var(--ui-text-1)' }}
@@ -902,20 +913,27 @@ export function ChatWindow({ conversation, provider, onConversationUpdate }: Pro
   );
 }
 
-function EmptyState({ model, theme, onSend }: { model: Model; theme: ProviderTheme; onSend: (s: string) => void }) {
-  const suggestions = [
-    'Explain how quantum computing works',
-    'Write a professional email template',
-    'Create a budget tracking spreadsheet',
-    'Generate an image of a futuristic city at sunset',
-  ];
+function EmptyState({ catInfo, theme, onSend }: { catInfo: ReturnType<typeof getCategoryInfo>; theme: ProviderTheme; onSend: (s: string) => void }) {
+  const suggestions: Record<string, string[]> = {
+    text:          ['Explain how quantum computing works', 'Write a professional email template', 'Summarize the latest AI research'],
+    image:         ['Generate an image of a futuristic city at sunset', 'Create a portrait of a cyberpunk samurai', 'Draw a calm zen garden at dusk'],
+    embeddings:    ['Compare the semantic similarity of these sentences', 'Cluster these topics by meaning', 'Find the most relevant document for my query'],
+    audio:         ['Transcribe this audio description', 'Explain audio compression formats', 'How does noise cancellation work?'],
+    video:         ['Describe what happens in this scene', 'Summarize a video plot', 'Explain video encoding formats'],
+    rerank:        ['Rank these documents by relevance to my query', 'Which result is most useful for my search?', 'Sort these answers by quality'],
+    speech:        ['Convert this text to speech script', 'Write a podcast intro script', 'Create a voiceover for a product demo'],
+    transcription: ['Transcribe this meeting notes', 'Convert spoken words to text format', 'Create a subtitle script'],
+    document:      ['Write a Word document about climate change', 'Create a spreadsheet for budget tracking', 'Write a PDF report on AI trends'],
+    study:         ['Create an interactive exam about photosynthesis', 'Make flashcards for Spanish vocabulary', 'Draw a mind map for machine learning'],
+  };
+  const catSuggestions = suggestions[catInfo?.id ?? 'text'] ?? suggestions.text;
   return (
     <div className="flex flex-col items-center justify-center h-full text-center max-w-md mx-auto px-4">
-      <div className="text-5xl mb-4">{model.icon}</div>
-      <h2 className="text-2xl font-semibold mb-2" style={{ color: 'var(--ui-text-1)' }}>{model.name}</h2>
-      <p className="text-sm mb-8" style={{ color: 'var(--ui-text-3)' }}>{model.description}</p>
+      <div className="text-5xl mb-4">{catInfo?.emoji ?? '🤖'}</div>
+      <h2 className="text-2xl font-semibold mb-2" style={{ color: 'var(--ui-text-1)' }}>{catInfo?.label ?? 'AI'}</h2>
+      <p className="text-sm mb-8" style={{ color: 'var(--ui-text-3)' }}>Choose a model above and start chatting</p>
       <div className="grid grid-cols-1 gap-2 w-full">
-        {suggestions.map((s) => (
+        {catSuggestions.map((s) => (
           <button key={s} onClick={() => onSend(s)}
             className="text-left px-4 py-3 rounded-xl text-sm transition-colors border"
             style={{ background: 'var(--ui-bg-card)', borderColor: 'var(--ui-border)', color: 'var(--ui-text-2)' }}

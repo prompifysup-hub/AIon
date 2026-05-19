@@ -6,8 +6,8 @@ import { ChatSidebar } from '@/components/ChatSidebar';
 import { ChatWindow } from '@/components/ChatWindow';
 import { ProviderRail } from '@/components/ProviderRail';
 import { Conversation } from '@/lib/history';
-import { Provider } from '@/lib/models';
-import { getProviderTheme } from '@/lib/providerThemes';
+import { Category, getCategoryInfo, getDefaultModelId } from '@/lib/models';
+import { getCategoryTheme } from '@/lib/providerThemes';
 import { useAccent } from '@/lib/accent';
 
 export default function ChatPage() {
@@ -15,22 +15,30 @@ export default function ChatPage() {
   const userId = session?.user?.email ?? '';
 
   const [conversation, setConversation] = useState<Conversation | null>(null);
-  const [provider, setProvider] = useState<Provider>('gemini');
+  const [category, setCategory] = useState<Category>('text');
   const accentHex = useAccent();
 
   const handleSelectConversation = (conv: Conversation) => {
     setConversation(conv);
-    setProvider(conv.provider ?? 'gemini');
+    // Map legacy provider values to categories
+    const legacyToCategory: Record<string, Category> = {
+      gemini: 'text', deepseek: 'text', qwen: 'text',
+    };
+    const cat = (conv.provider ?? 'text') as Category;
+    setCategory(legacyToCategory[cat] ?? cat);
   };
 
-  const handleProviderChange = (p: Provider) => {
-    setProvider(p);
+  const handleCategoryChange = (c: Category) => {
+    setCategory(c);
     setConversation(null);
   };
 
+  const catColor = getCategoryInfo(category)?.color ?? '#3B82F6';
+  const theme = getCategoryTheme(catColor, accentHex);
+
   return (
     <div className="flex h-full">
-      <ProviderRail active={provider} onSelect={handleProviderChange} />
+      <ProviderRail active={category} onSelect={handleCategoryChange} />
       <ChatSidebar
         activeId={conversation?.id}
         userId={userId}
@@ -40,13 +48,14 @@ export default function ChatPage() {
       <main
         className="flex-1 min-w-0"
         style={{
-          background: `linear-gradient(${getProviderTheme(provider, accentHex).chatBgTint}, ${getProviderTheme(provider, accentHex).chatBgTint}), var(--ui-bg-main)`,
+          background: `linear-gradient(${theme.chatBgTint}, ${theme.chatBgTint}), var(--ui-bg-main)`,
         }}
       >
         <ChatWindow
-          key={`${provider}-${conversation?.id ?? 'new'}`}
+          key={`${category}-${conversation?.id ?? 'new'}`}
           conversation={conversation}
-          provider={provider}
+          category={category}
+          defaultModelId={getDefaultModelId(category)}
           onConversationUpdate={setConversation}
         />
       </main>

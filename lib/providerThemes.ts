@@ -1,4 +1,4 @@
-import { Provider } from './models';
+import { categories } from './models';
 
 function hexToRgb(hex: string): string | null {
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -34,13 +34,49 @@ export interface ProviderTheme {
   isRainbow?: boolean;
 }
 
-/** Returns the provider theme, overriding all primary colors with the accent hex when provided. */
-export function getProviderTheme(provider: Provider, accentHex?: string | null): ProviderTheme {
-  const base = providerThemes[provider];
+// Legacy provider → color mapping
+const LEGACY_COLORS: Record<string, string> = {
+  gemini:   '#3B82F6',
+  deepseek: '#1D4ED8',
+  qwen:     '#9333EA',
+};
+
+function getCategoryColor(category: string): string | null {
+  const cat = categories.find(c => c.id === category);
+  if (cat) return cat.color;
+  return LEGACY_COLORS[category] ?? null;
+}
+
+function buildTheme(primaryColor: string): ProviderTheme {
+  const rgb = hexToRgb(primaryColor);
+  if (!rgb) return buildTheme('#3B82F6');
+  return {
+    primaryColor,
+    primaryHover: darkenHex(primaryColor),
+    chatBgTint:           `rgba(${rgb},0.08)`,
+    userBubbleBg:         `rgba(${rgb},0.18)`,
+    userBubbleBorder:     `rgba(${rgb},0.25)`,
+    dotColor:              primaryColor,
+    textareaBorderFocus:  `rgba(${rgb},0.5)`,
+    imageActiveBg:        `rgba(${rgb},0.15)`,
+    imageActiveBorder:    `rgba(${rgb},0.3)`,
+    imageActiveColor:      primaryColor,
+    docsActiveBg:         `rgba(${rgb},0.1)`,
+    docsActiveColor:       primaryColor,
+    railRing:             `rgba(${rgb},0.5)`,
+    downloadBtnBg:        `rgba(${rgb},0.15)`,
+    downloadBtnColor:      primaryColor,
+    blockquoteBorder:      primaryColor,
+    codeColor:             primaryColor,
+  };
+}
+
+/** Returns the theme for a category (or legacy provider). accentHex overrides all colors. */
+export function getProviderTheme(category: string, accentHex?: string | null): ProviderTheme {
   if (!accentHex || !accentHex.startsWith('#')) {
-    // Rainbow mode — gradient is applied via CSS class; provide tint colors here
+    // Rainbow mode
     return {
-      ...base,
+      ...buildTheme('#f59e0b'),
       isRainbow: true,
       primaryColor: '#ffffff',
       primaryHover: '#ffffff',
@@ -61,86 +97,22 @@ export function getProviderTheme(provider: Provider, accentHex?: string | null):
       codeColor:         '#fbbf24',
     };
   }
-  const rgb = hexToRgb(accentHex);
-  if (!rgb) return base;
-  return {
-    ...base,
-    primaryColor:      accentHex,
-    primaryHover:      darkenHex(accentHex),
-    chatBgTint:        `rgba(${rgb},0.10)`,
-    userBubbleBg:      `rgba(${rgb},0.18)`,
-    userBubbleBorder:  `rgba(${rgb},0.25)`,
-    dotColor:          accentHex,
-    textareaBorderFocus: `rgba(${rgb},0.5)`,
-    imageActiveBg:     `rgba(${rgb},0.15)`,
-    imageActiveBorder: `rgba(${rgb},0.3)`,
-    imageActiveColor:  accentHex,
-    docsActiveBg:      `rgba(${rgb},0.1)`,
-    docsActiveColor:   accentHex,
-    railRing:          `rgba(${rgb},0.5)`,
-    downloadBtnBg:     `rgba(${rgb},0.15)`,
-    downloadBtnColor:  accentHex,
-    blockquoteBorder:  accentHex,
-    codeColor:         accentHex,
-  };
+
+  return buildTheme(accentHex);
 }
 
-export const providerThemes: Record<Provider, ProviderTheme> = {
-  gemini: {
-    primaryColor: '#3B82F6',
-    primaryHover: '#2563EB',
-    chatBgTint: 'rgba(59,130,246,0.10)',
-    userBubbleBg: 'rgba(59,130,246,0.18)',
-    userBubbleBorder: 'rgba(96,165,250,0.25)',
-    dotColor: '#60A5FA',
-    textareaBorderFocus: 'rgba(59,130,246,0.5)',
-    imageActiveBg: 'rgba(59,130,246,0.15)',
-    imageActiveBorder: 'rgba(96,165,250,0.3)',
-    imageActiveColor: '#93C5FD',
-    docsActiveBg: 'rgba(59,130,246,0.1)',
-    docsActiveColor: '#60A5FA',
-    railRing: 'rgba(59,130,246,0.35)',
-    downloadBtnBg: 'rgba(59,130,246,0.15)',
-    downloadBtnColor: '#93C5FD',
-    blockquoteBorder: '#3B82F6',
-    codeColor: '#93C5FD',
-  },
-  deepseek: {
-    primaryColor: '#1D4ED8',
-    primaryHover: '#1E40AF',
-    chatBgTint: 'rgba(29,78,216,0.11)',
-    userBubbleBg: 'rgba(29,78,216,0.22)',
-    userBubbleBorder: 'rgba(59,130,246,0.22)',
-    dotColor: '#3B82F6',
-    textareaBorderFocus: 'rgba(29,78,216,0.55)',
-    imageActiveBg: 'rgba(29,78,216,0.2)',
-    imageActiveBorder: 'rgba(59,130,246,0.3)',
-    imageActiveColor: '#93C5FD',
-    docsActiveBg: 'rgba(29,78,216,0.15)',
-    docsActiveColor: '#60A5FA',
-    railRing: 'rgba(29,78,216,0.45)',
-    downloadBtnBg: 'rgba(29,78,216,0.2)',
-    downloadBtnColor: '#93C5FD',
-    blockquoteBorder: '#1D4ED8',
-    codeColor: '#93C5FD',
-  },
-  qwen: {
-    primaryColor: '#9333EA',
-    primaryHover: '#7C3AED',
-    chatBgTint: 'rgba(147,51,234,0.10)',
-    userBubbleBg: 'rgba(147,51,234,0.18)',
-    userBubbleBorder: 'rgba(168,85,247,0.25)',
-    dotColor: '#C084FC',
-    textareaBorderFocus: 'rgba(147,51,234,0.5)',
-    imageActiveBg: 'rgba(147,51,234,0.15)',
-    imageActiveBorder: 'rgba(168,85,247,0.3)',
-    imageActiveColor: '#D8B4FE',
-    docsActiveBg: 'rgba(147,51,234,0.1)',
-    docsActiveColor: '#C084FC',
-    railRing: 'rgba(147,51,234,0.35)',
-    downloadBtnBg: 'rgba(147,51,234,0.15)',
-    downloadBtnColor: '#D8B4FE',
-    blockquoteBorder: '#9333EA',
-    codeColor: '#D8B4FE',
-  },
+// Keep old export shape for any code that imports providerThemes directly
+export const providerThemes = {
+  gemini:   buildTheme('#3B82F6'),
+  deepseek: buildTheme('#1D4ED8'),
+  qwen:     buildTheme('#9333EA'),
 };
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function getCategoryTheme(category: string, accentHex?: string | null): ProviderTheme {
+  if (!accentHex || !accentHex.startsWith('#')) {
+    const catColor = getCategoryColor(category);
+    if (catColor) return buildTheme(catColor);
+  }
+  return getProviderTheme(category, accentHex);
+}
