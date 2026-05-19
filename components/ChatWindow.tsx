@@ -395,12 +395,17 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
     // Auto-scroll only when regenerating the bottommost message
     if (msgIdx === messages.length - 1) autoScrollRef.current = true;
 
+    // Save original values so we can restore on abort
+    const origContent = targetMsg.content;
+    const origMediaUrl = targetMsg.mediaUrl;
+    const origMediaType = targetMsg.mediaType;
+
     // Build full version list; if first regeneration, seed with original content
     const existingEntry = msgVersions.get(msgId);
     const allVersions = existingEntry?.versions ?? [targetMsg.content];
 
-    // Clear this message content for streaming
-    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: '' } : m));
+    // Clear message (including image) for regeneration
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: '', mediaUrl: undefined } : m));
     setIsThinking(true);
     setIsStreaming(true);
     abortRef.current = new AbortController();
@@ -408,6 +413,45 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
     const update = (u: Partial<Message>) =>
       setMessages(prev => prev.map(m => m.id === msgId ? { ...m, ...u } : m));
 
+    const isImageRegen = origMediaType === 'image' || (getModelInfo(category, modelId)?.isImageGen ?? false);
+
+    if (isImageRegen) {
+      // ── Image regeneration ────────────────────────────────────────────
+      const userPrompt = base[base.length - 1].content;
+      try {
+        const res = await fetch('/api/generate/image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: userPrompt,
+            model: getModelInfo(category, modelId)?.isImageGen ? modelId : undefined,
+          }),
+          signal: abortRef.current.signal,
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+        const newContent = `Here's your image for: *${userPrompt}*`;
+        update({ content: newContent, mediaUrl: data.url, mediaType: 'image' });
+        const newVersions = [...allVersions, newContent];
+        setMsgVersions(prev => new Map(prev).set(msgId, { versions: newVersions, idx: newVersions.length - 1 }));
+        persistConversation(
+          messages.map(m => m.id === msgId ? { ...m, content: newContent, mediaUrl: data.url, mediaType: 'image' as const } : m),
+          modelId,
+        );
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          update({ content: origContent, mediaUrl: origMediaUrl, mediaType: origMediaType });
+        } else {
+          update({ content: `⚠️ ${err instanceof Error ? err.message : 'Unknown error'}` });
+        }
+      } finally {
+        setIsThinking(false);
+        setIsStreaming(false);
+      }
+      return;
+    }
+
+    // ── Text / chat regeneration ──────────────────────────────────────
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
