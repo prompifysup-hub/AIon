@@ -820,57 +820,63 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
   );
 }
 
-const PROVIDER_LOGOS: Record<string, { bg: string; fg: string; label: string }> = {
-  'openai':     { bg: '#10a37f', fg: '#fff', label: 'OAI' },
-  'anthropic':  { bg: '#d97757', fg: '#fff', label: 'ANT' },
-  'google':     { bg: '#4285f4', fg: '#fff', label: 'GEM' },
-  'deepseek':   { bg: '#1677ff', fg: '#fff', label: 'DS'  },
-  'meta-llama': { bg: '#0082fb', fg: '#fff', label: 'LLM' },
-  'qwen':       { bg: '#ff6900', fg: '#fff', label: 'QWN' },
-  'mistralai':  { bg: '#ff7000', fg: '#fff', label: 'MST' },
+// Map provider prefix → actual logo image URL
+// Using each provider's own favicon for accurate brand representation
+const PROVIDER_LOGO_URL: Record<string, string> = {
+  'openai':     'https://openai.com/favicon.ico',
+  'anthropic':  'https://www.anthropic.com/favicon.ico',
+  'google':     'https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg',
+  'deepseek':   'https://deepseek.com/favicon.ico',
+  'meta-llama': 'https://www.llama.com/favicon.ico',
+  'qwen':       'https://qwenlm.github.io/favicon.png',
+  'mistralai':  'https://mistral.ai/favicon.ico',
+};
+
+// Fallback colored badges if image fails to load
+const PROVIDER_FALLBACK: Record<string, { bg: string; label: string }> = {
+  'openai':     { bg: '#10a37f', label: 'OAI' },
+  'anthropic':  { bg: '#d97757', label: 'ANT' },
+  'google':     { bg: '#4285f4', label: 'GEM' },
+  'deepseek':   { bg: '#1677ff', label: 'DS'  },
+  'meta-llama': { bg: '#0082fb', label: 'LLM' },
+  'qwen':       { bg: '#ff6900', label: 'QWN' },
+  'mistralai':  { bg: '#ff7000', label: 'MST' },
 };
 
 function ModelLogo({ modelId, size = 16 }: { modelId: string; size?: number }) {
-  const radius = Math.round(size * 0.3);
-  const fontSize = Math.max(Math.round(size * 0.38), 7);
+  const [imgFailed, setImgFailed] = useState(false);
+  const radius = Math.round(size * 0.28);
 
-  if (!modelId.includes('/')) {
-    // Pollinations image-gen models (flux-schnell, flux, turbo)
+  const prefix = modelId.includes('/') ? modelId.split('/')[0] : null;
+  const logoUrl = prefix ? PROVIDER_LOGO_URL[prefix] : 'https://pollinations.ai/favicon.ico';
+  const fallback = prefix ? PROVIDER_FALLBACK[prefix] : null;
+
+  const fallbackStyle: React.CSSProperties = {
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    width: size, height: size, borderRadius: radius, flexShrink: 0, lineHeight: 1,
+    fontSize: Math.max(Math.round(size * 0.38), 7), fontWeight: 700,
+    fontFamily: 'system-ui, -apple-system, sans-serif',
+    background: fallback?.bg ?? 'linear-gradient(135deg,#ff4785,#a855f7)',
+    color: '#fff',
+  };
+
+  if (logoUrl && !imgFailed) {
     return (
-      <span
-        style={{
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          width: size, height: size, borderRadius: radius,
-          background: 'linear-gradient(135deg,#ff4785,#a855f7)',
-          fontSize: Math.round(size * 0.65), lineHeight: 1, flexShrink: 0,
-        }}
-      >✦</span>
-    );
-  }
-
-  const prefix = modelId.split('/')[0];
-  const p = PROVIDER_LOGOS[prefix];
-
-  if (!p) {
-    return (
-      <span style={{
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        width: size, height: size, borderRadius: radius,
-        background: 'var(--ui-bg-card-hover)', color: 'var(--ui-text-2)',
-        fontSize, fontWeight: 700, flexShrink: 0, lineHeight: 1,
-      }}>AI</span>
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={logoUrl}
+        alt=""
+        width={size}
+        height={size}
+        onError={() => setImgFailed(true)}
+        style={{ borderRadius: radius, flexShrink: 0, objectFit: 'contain', display: 'block' }}
+      />
     );
   }
 
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-      width: size, height: size, borderRadius: radius,
-      background: p.bg, color: p.fg,
-      fontSize, fontWeight: 700, letterSpacing: '-0.3px', lineHeight: 1, flexShrink: 0,
-      fontFamily: 'system-ui, -apple-system, sans-serif',
-    }}>
-      {p.label[0]}
+    <span style={fallbackStyle}>
+      {fallback ? fallback.label[0] : '✦'}
     </span>
   );
 }
