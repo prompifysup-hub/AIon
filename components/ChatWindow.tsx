@@ -205,7 +205,9 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
         createdAt: convCreatedAtRef.current,
         updatedAt: now,
       };
-      saveConversation(conv).then(() => window.dispatchEvent(new Event('aion:history')));
+      saveConversation(conv)
+        .catch((e) => console.error('[history] save failed:', e))
+        .finally(() => window.dispatchEvent(new Event('aion:history')));
       onConversationUpdate(conv);
     },
     [onConversationUpdate, category],
