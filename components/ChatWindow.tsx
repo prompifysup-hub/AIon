@@ -8,9 +8,9 @@ import { Conversation, saveConversation } from '@/lib/history';
 import { getCategoryTheme, ProviderTheme } from '@/lib/providerThemes';
 import { useAccent } from '@/lib/accent';
 import {
-  Send, StopCircle, BookOpen, Loader2, Image as ImageIcon,
+  Send, StopCircle, Loader2, Image as ImageIcon,
   ChevronDown, ChevronLeft, ChevronRight, Paperclip, Download, Mic,
-  Copy, Check, Volume2, VolumeX, GraduationCap, RotateCcw, X, FileText,
+  Copy, Check, Volume2, VolumeX, RotateCcw, X, FileText,
 } from 'lucide-react';
 import { ExamBlock, FlashcardBlock, MermaidBlock } from './StudyBlocks';
 import ReactMarkdown from 'react-markdown';
@@ -47,8 +47,6 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
   const [uploadingFile, setUploadingFile] = useState(false);
   const [textareaFocused, setTextareaFocused] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [showStudy, setShowStudy] = useState(false);
-  const [showDocPicker, setShowDocPicker] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [msgVersions, setMsgVersions] = useState<Map<string, { versions: string[]; idx: number }>>(new Map());
 
@@ -58,8 +56,6 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
   const abortRef = useRef<AbortController | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
-  const studyPickerRef = useRef<HTMLDivElement>(null);
-  const docPickerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
@@ -79,7 +75,7 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
       convCreatedAtRef.current = conversation.createdAt;
     } else {
       setMessages([]);
-      setModelId('fast');
+      setModelId(defaultModelId);
       convIdRef.current = crypto.randomUUID();
       convCreatedAtRef.current = new Date().toISOString();
     }
@@ -150,12 +146,6 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
     const handler = (e: MouseEvent) => {
       if (modelPickerRef.current && !modelPickerRef.current.contains(e.target as Node)) {
         setShowModelPicker(false);
-      }
-      if (studyPickerRef.current && !studyPickerRef.current.contains(e.target as Node)) {
-        setShowStudy(false);
-      }
-      if (docPickerRef.current && !docPickerRef.current.contains(e.target as Node)) {
-        setShowDocPicker(false);
       }
     };
     document.addEventListener('mousedown', handler);
@@ -626,178 +616,113 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
       <div className="px-4 pb-4 shrink-0">
         <div className="max-w-3xl mx-auto space-y-2">
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Model picker */}
-            <div className="relative" ref={modelPickerRef}>
-              <button
-                onClick={() => setShowModelPicker((v) => !v)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors"
-                style={{ background: 'var(--ui-bg-card)', color: 'var(--ui-text-2)' }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card-hover)')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
-              >
-                <span>{catInfo?.models.find(m => m.id === modelId)?.icon ?? catInfo?.emoji ?? '🤖'}</span>
-                <span className="max-w-[120px] truncate">{catInfo?.models.find(m => m.id === modelId)?.name ?? modelId}</span>
-                <ChevronDown size={13} className={`transition-transform ${showModelPicker ? 'rotate-180' : ''}`} />
-              </button>
-              {showModelPicker && (
-                <div className="absolute bottom-full mb-2 left-0 rounded-xl border shadow-xl overflow-hidden min-w-56 z-20"
-                  style={{ background: 'var(--ui-bg-sidebar)', borderColor: 'var(--ui-border)' }}>
-                  <div className="px-3 py-1.5 border-b" style={{ borderColor: 'var(--ui-border)' }}>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--ui-text-3)' }}>
-                      {catInfo?.label} Models
-                    </p>
-                  </div>
-                  {(catInfo?.models ?? []).map((m: AIModel) => (
-                    <button key={m.id}
-                      onClick={() => { setModelId(m.id); setShowModelPicker(false); }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors"
-                      style={{ color: modelId === m.id ? 'var(--ui-text-1)' : 'var(--ui-text-2)' }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                    >
-                      <span>{m.icon}</span>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{m.name}</p>
-                        <p className="text-xs truncate" style={{ color: 'var(--ui-text-3)' }}>{m.description}</p>
-                      </div>
-                      {modelId === m.id && <span className="text-xs shrink-0" style={{ color: theme.primaryColor }}>✓</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Image mode */}
-            <button
-              onClick={() => setImageMode((v) => !v)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors"
-              style={imageMode ? {
-                background: theme.imageActiveBg, color: theme.imageActiveColor,
-                border: `1px solid ${theme.imageActiveBorder}`,
-              } : { background: 'var(--ui-bg-card)', color: 'var(--ui-text-3)', border: '1px solid transparent' }}
-              onMouseEnter={(e) => { if (!imageMode) e.currentTarget.style.background = 'var(--ui-bg-card-hover)'; }}
-              onMouseLeave={(e) => { if (!imageMode) e.currentTarget.style.background = 'var(--ui-bg-card)'; }}
-            >
-              <ImageIcon size={13} />
-              <span>Image</span>
-            </button>
-
-            {/* Docs / file generation picker */}
-            <div className="relative" ref={docPickerRef}>
-              <button
-                onClick={() => setShowDocPicker((v) => !v)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors"
-                style={showDocPicker ? {
-                  background: theme.imageActiveBg, color: theme.imageActiveColor,
-                  border: `1px solid ${theme.imageActiveBorder}`,
-                } : { background: 'var(--ui-bg-card)', color: 'var(--ui-text-3)', border: '1px solid transparent' }}
-                onMouseEnter={(e) => { if (!showDocPicker) e.currentTarget.style.background = 'var(--ui-bg-card-hover)'; }}
-                onMouseLeave={(e) => { if (!showDocPicker) e.currentTarget.style.background = 'var(--ui-bg-card)'; }}
-              >
-                <BookOpen size={13} />
-                <span>Docs</span>
-                <ChevronDown size={11} className={`transition-transform ${showDocPicker ? 'rotate-180' : ''}`} />
-              </button>
-              {showDocPicker && (
-                <div className="absolute bottom-full mb-2 left-0 rounded-xl border shadow-xl overflow-hidden min-w-52 z-20"
-                  style={{ background: 'var(--ui-bg-sidebar)', borderColor: 'var(--ui-border)' }}>
-                  {[
-                    { icon: '📄', label: 'Document', desc: 'Word-style .docx file',       prompt: 'Write a Word document about ' },
-                    { icon: '📊', label: 'Spreadsheet', desc: 'Excel-style .xlsx file',    prompt: 'Create a spreadsheet for ' },
-                    { icon: '📑', label: 'Presentation', desc: 'PowerPoint-style .pptx file', prompt: 'Create a PowerPoint presentation about ' },
-                    { icon: '📋', label: 'PDF', desc: 'PDF document',                       prompt: 'Write a PDF document about ' },
-                  ].map((item) => (
-                    <button
-                      key={item.label}
-                      onClick={() => {
-                        setInput(item.prompt);
-                        setShowDocPicker(false);
-                        requestAnimationFrame(() => { textareaRef.current?.focus(); autoResize(); });
-                      }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors"
-                      style={{ color: 'var(--ui-text-2)' }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                    >
-                      <span className="text-base">{item.icon}</span>
-                      <div>
-                        <p className="font-medium text-sm" style={{ color: 'var(--ui-text-1)' }}>{item.label}</p>
-                        <p className="text-xs" style={{ color: 'var(--ui-text-3)' }}>{item.desc}</p>
-                      </div>
-                    </button>
-                  ))}
-                  <div className="border-t mx-2" style={{ borderColor: 'var(--ui-border)' }} />
+            {category === 'document' ? (
+              /* Document type pills */
+              <>
+                {[
+                  { icon: '📄', label: 'Document',     prompt: 'Write a Word document about ' },
+                  { icon: '📊', label: 'Spreadsheet',  prompt: 'Create a spreadsheet for ' },
+                  { icon: '📑', label: 'Presentation', prompt: 'Create a PowerPoint presentation about ' },
+                  { icon: '📋', label: 'PDF',          prompt: 'Write a PDF document about ' },
+                  { icon: '📝', label: 'Text',         prompt: 'Write a text document about ' },
+                ].map((item) => (
                   <button
-                    onClick={() => { setShowDocs(true); setShowDocPicker(false); }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors"
-                    style={{ color: 'var(--ui-text-2)' }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    key={item.label}
+                    onClick={() => { setInput(item.prompt); requestAnimationFrame(() => { textareaRef.current?.focus(); autoResize(); }); }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors"
+                    style={{ background: 'var(--ui-bg-card)', color: 'var(--ui-text-2)' }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card-hover)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
                   >
-                    <span className="text-base">⬆️</span>
-                    <div>
-                      <p className="font-medium text-sm" style={{ color: 'var(--ui-text-1)' }}>
-                        Upload to context{docCount > 0 ? ` (${docCount})` : ''}
-                      </p>
-                      <p className="text-xs" style={{ color: 'var(--ui-text-3)' }}>Add files for AI to reference</p>
-                    </div>
+                    <span>{item.icon}</span>
+                    <span>{item.label}</span>
                   </button>
-                </div>
-              )}
-            </div>
-
-            {/* Study mode */}
-            <div className="relative" ref={studyPickerRef}>
-              <button
-                onClick={() => setShowStudy((v) => !v)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors"
-                style={showStudy ? {
-                  background: theme.imageActiveBg, color: theme.imageActiveColor,
-                  border: `1px solid ${theme.imageActiveBorder}`,
-                } : { background: 'var(--ui-bg-card)', color: 'var(--ui-text-3)', border: '1px solid transparent' }}
-                onMouseEnter={(e) => { if (!showStudy) e.currentTarget.style.background = 'var(--ui-bg-card-hover)'; }}
-                onMouseLeave={(e) => { if (!showStudy) e.currentTarget.style.background = 'var(--ui-bg-card)'; }}
-              >
-                <GraduationCap size={13} />
-                <span>Study</span>
-                <ChevronDown size={11} className={`transition-transform ${showStudy ? 'rotate-180' : ''}`} />
-              </button>
-              {showStudy && (
-                <div className="absolute bottom-full mb-2 left-0 rounded-xl border shadow-xl overflow-hidden min-w-48 z-20"
-                  style={{ background: 'var(--ui-bg-sidebar)', borderColor: 'var(--ui-border)' }}>
-                  {[
-                    { icon: '📝', label: 'Exam', desc: 'Interactive quiz with answers', prompt: 'Create an interactive exam with 5 multiple-choice questions about ' },
-                    { icon: '🃏', label: 'Flashcards', desc: 'Flip cards to practice', prompt: 'Create a flashcard deck to help me study ' },
-                    { icon: '🗺️', label: 'Mind Map', desc: 'Visual concept diagram', prompt: 'Draw a mind map diagram for ' },
-                    { icon: '📊', label: 'Flowchart', desc: 'Process / logic diagram', prompt: 'Create a flowchart diagram showing ' },
-                    { icon: '🔗', label: 'ER Diagram', desc: 'Entity-relationship diagram', prompt: 'Create an ER diagram for ' },
-                    { icon: '🔄', label: 'Sequence', desc: 'Sequence / interaction diagram', prompt: 'Create a sequence diagram for ' },
-                  ].map((item) => (
-                    <button
-                      key={item.label}
-                      onClick={() => {
-                        setInput(item.prompt);
-                        setShowStudy(false);
-                        requestAnimationFrame(() => {
-                          textareaRef.current?.focus();
-                          autoResize();
-                        });
-                      }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors"
-                      style={{ color: 'var(--ui-text-2)' }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                    >
-                      <span className="text-base">{item.icon}</span>
-                      <div>
-                        <p className="font-medium text-sm" style={{ color: 'var(--ui-text-1)' }}>{item.label}</p>
-                        <p className="text-xs" style={{ color: 'var(--ui-text-3)' }}>{item.desc}</p>
+                ))}
+              </>
+            ) : category === 'study' ? (
+              /* Study type pills */
+              <>
+                {[
+                  { icon: '📝', label: 'Exam',       prompt: 'Create an interactive exam with 5 multiple-choice questions about ' },
+                  { icon: '🃏', label: 'Flashcards', prompt: 'Create a flashcard deck to help me study ' },
+                  { icon: '🗺️', label: 'Mind Map',   prompt: 'Draw a mind map diagram for ' },
+                  { icon: '📊', label: 'Flowchart',  prompt: 'Create a flowchart diagram showing ' },
+                  { icon: '🔗', label: 'ER Diagram', prompt: 'Create an ER diagram for ' },
+                  { icon: '🔄', label: 'Sequence',   prompt: 'Create a sequence diagram for ' },
+                ].map((item) => (
+                  <button
+                    key={item.label}
+                    onClick={() => { setInput(item.prompt); requestAnimationFrame(() => { textareaRef.current?.focus(); autoResize(); }); }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors"
+                    style={{ background: 'var(--ui-bg-card)', color: 'var(--ui-text-2)' }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card-hover)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
+                  >
+                    <span>{item.icon}</span>
+                    <span>{item.label}</span>
+                  </button>
+                ))}
+              </>
+            ) : (
+              /* AI model picker + image mode for all other categories */
+              <>
+                {/* Model picker */}
+                <div className="relative" ref={modelPickerRef}>
+                  <button
+                    onClick={() => setShowModelPicker((v) => !v)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors"
+                    style={{ background: 'var(--ui-bg-card)', color: 'var(--ui-text-2)' }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card-hover)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
+                  >
+                    <span>{catInfo?.models.find(m => m.id === modelId)?.icon ?? catInfo?.emoji ?? '🤖'}</span>
+                    <span className="max-w-[120px] truncate">{catInfo?.models.find(m => m.id === modelId)?.name ?? modelId}</span>
+                    <ChevronDown size={13} className={`transition-transform ${showModelPicker ? 'rotate-180' : ''}`} />
+                  </button>
+                  {showModelPicker && (
+                    <div className="absolute bottom-full mb-2 left-0 rounded-xl border shadow-xl overflow-hidden min-w-56 z-20"
+                      style={{ background: 'var(--ui-bg-sidebar)', borderColor: 'var(--ui-border)' }}>
+                      <div className="px-3 py-1.5 border-b" style={{ borderColor: 'var(--ui-border)' }}>
+                        <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--ui-text-3)' }}>
+                          {catInfo?.label} Models
+                        </p>
                       </div>
-                    </button>
-                  ))}
+                      {(catInfo?.models ?? []).map((m: AIModel) => (
+                        <button key={m.id}
+                          onClick={() => { setModelId(m.id); setShowModelPicker(false); }}
+                          className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left text-sm transition-colors"
+                          style={{ color: modelId === m.id ? 'var(--ui-text-1)' : 'var(--ui-text-2)' }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                        >
+                          <span>{m.icon}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium truncate">{m.name}</p>
+                            <p className="text-xs truncate" style={{ color: 'var(--ui-text-3)' }}>{m.description}</p>
+                          </div>
+                          {modelId === m.id && <span className="text-xs shrink-0" style={{ color: theme.primaryColor }}>✓</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+
+                {/* Image mode */}
+                <button
+                  onClick={() => setImageMode((v) => !v)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors"
+                  style={imageMode ? {
+                    background: theme.imageActiveBg, color: theme.imageActiveColor,
+                    border: `1px solid ${theme.imageActiveBorder}`,
+                  } : { background: 'var(--ui-bg-card)', color: 'var(--ui-text-3)', border: '1px solid transparent' }}
+                  onMouseEnter={(e) => { if (!imageMode) e.currentTarget.style.background = 'var(--ui-bg-card-hover)'; }}
+                  onMouseLeave={(e) => { if (!imageMode) e.currentTarget.style.background = 'var(--ui-bg-card)'; }}
+                >
+                  <ImageIcon size={13} />
+                  <span>Image</span>
+                </button>
+              </>
+            )}
 
             {uploadingFile && (
               <div className="flex items-center gap-1.5 text-xs ml-auto" style={{ color: 'var(--ui-text-3)' }}>
