@@ -8,7 +8,7 @@ import { Conversation, saveConversation } from '@/lib/history';
 import { getCategoryTheme, ProviderTheme } from '@/lib/providerThemes';
 import { useAccent } from '@/lib/accent';
 import {
-  Send, StopCircle, Loader2, Image as ImageIcon,
+  Send, StopCircle, Loader2,
   ChevronDown, ChevronLeft, ChevronRight, Paperclip, Download, Mic,
   Copy, Check, Volume2, VolumeX, RotateCcw, X, FileText,
 } from 'lucide-react';
@@ -27,8 +27,7 @@ interface Props {
 }
 
 export function ChatWindow({ conversation, category, defaultModelId, onConversationUpdate }: Props) {
-  const { data: session } = useSession();
-  const userId = session?.user?.email ?? '';
+  useSession();
   const accentHex = useAccent();
   const catInfo = useMemo(() => getCategoryInfo(category), [category]);
   const catColor = catInfo?.color ?? '#3B82F6';
@@ -39,7 +38,6 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
-  const [imageMode, setImageMode] = useState(false);
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [showDocs, setShowDocs] = useState(false);
   const [docCount, setDocCount] = useState(0);
@@ -82,7 +80,6 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
     setInput('');
     setIsStreaming(false);
     setIsThinking(false);
-    setImageMode(false);
     setAttachments([]);
     setMsgVersions(new Map());
     window.speechSynthesis?.cancel();
@@ -208,11 +205,10 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
         createdAt: convCreatedAtRef.current,
         updatedAt: now,
       };
-      saveConversation(conv, userId);
-      window.dispatchEvent(new Event('aion:history'));
+      saveConversation(conv).then(() => window.dispatchEvent(new Event('aion:history')));
       onConversationUpdate(conv);
     },
-    [onConversationUpdate, category, userId],
+    [onConversationUpdate, category],
   );
 
   const sendMessage = useCallback(
@@ -263,7 +259,7 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
       const imageAtt = pendingAttachments.find(a => !a.isText && a.mimeType.startsWith('image/'));
       const selectedModelInfo = getModelInfo(category, modelId);
       const isImageGenModel = selectedModelInfo?.isImageGen ?? false;
-      const isImageRequest = (imageMode || isImageGenModel || (IMAGE_VERB_RE.test(trimmed) && IMAGE_NOUN_RE.test(trimmed))) && !hasTextAttachment;
+      const isImageRequest = (isImageGenModel || (IMAGE_VERB_RE.test(trimmed) && IMAGE_NOUN_RE.test(trimmed))) && !hasTextAttachment;
 
       if (isImageRequest) {
         try {
@@ -366,7 +362,7 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
         setIsStreaming(false);
       }
     },
-    [messages, isStreaming, modelId, category, imageMode, persistConversation, attachments],
+    [messages, isStreaming, modelId, category, persistConversation, attachments],
   );
 
   const navigateVersion = useCallback((msgId: string, dir: -1 | 1) => {
@@ -574,7 +570,7 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
               <MessageBubble
                 key={msg.id}
                 message={msg}
-                modelIcon={catInfo?.models.find(m => m.id === modelId)?.icon ?? catInfo?.emoji ?? '🤖'}
+                modelId={modelId}
                 theme={theme}
                 onRegenerate={
                   msg.role === 'assistant' && !isStreaming
@@ -587,9 +583,9 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
             ))}
             {isThinking && (
               <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0"
+                <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
                   style={{ background: 'var(--ui-bg-card)' }}>
-                  {catInfo?.models.find(m => m.id === modelId)?.icon ?? catInfo?.emoji ?? '🤖'}
+                  <ModelLogo modelId={modelId} size={20} />
                 </div>
                 <div className="flex items-center gap-1 pt-2">
                   {theme.isRainbow ? (
@@ -675,7 +671,7 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
                     onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card-hover)')}
                     onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
                   >
-                    <span>{catInfo?.models.find(m => m.id === modelId)?.icon ?? catInfo?.emoji ?? '🤖'}</span>
+                    <ModelLogo modelId={modelId} size={16} />
                     <span className="max-w-[120px] truncate">{catInfo?.models.find(m => m.id === modelId)?.name ?? modelId}</span>
                     <ChevronDown size={13} className={`transition-transform ${showModelPicker ? 'rotate-180' : ''}`} />
                   </button>
@@ -695,7 +691,7 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
                           onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
                           onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                         >
-                          <span>{m.icon}</span>
+                          <ModelLogo modelId={m.id} size={18} />
                           <div className="flex-1 min-w-0">
                             <p className="font-medium truncate">{m.name}</p>
                             <p className="text-xs truncate" style={{ color: 'var(--ui-text-3)' }}>{m.description}</p>
@@ -707,20 +703,6 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
                   )}
                 </div>
 
-                {/* Image mode */}
-                <button
-                  onClick={() => setImageMode((v) => !v)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors"
-                  style={imageMode ? {
-                    background: theme.imageActiveBg, color: theme.imageActiveColor,
-                    border: `1px solid ${theme.imageActiveBorder}`,
-                  } : { background: 'var(--ui-bg-card)', color: 'var(--ui-text-3)', border: '1px solid transparent' }}
-                  onMouseEnter={(e) => { if (!imageMode) e.currentTarget.style.background = 'var(--ui-bg-card-hover)'; }}
-                  onMouseLeave={(e) => { if (!imageMode) e.currentTarget.style.background = 'var(--ui-bg-card)'; }}
-                >
-                  <ImageIcon size={13} />
-                  <span>Image</span>
-                </button>
               </>
             )}
 
@@ -791,7 +773,7 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
               onKeyDown={handleKeyDown}
               onFocus={() => setTextareaFocused(true)}
               onBlur={() => setTextareaFocused(false)}
-              placeholder={imageMode ? 'Describe the image you want…' : isListening ? 'Listening…' : attachments.length > 0 ? `Add a message or just send ${attachments.length} file(s)…` : `Message ${catInfo?.models.find(m => m.id === modelId)?.name ?? catInfo?.label ?? 'AI'}…`}
+              placeholder={isListening ? 'Listening…' : attachments.length > 0 ? `Add a message or just send ${attachments.length} file(s)…` : `Message ${catInfo?.models.find(m => m.id === modelId)?.name ?? catInfo?.label ?? 'AI'}…`}
               rows={1}
               className="flex-1 bg-transparent placeholder-gray-500 resize-none outline-none text-sm leading-relaxed max-h-48 py-1"
               style={{ color: 'var(--ui-text-1)' }}
@@ -838,6 +820,61 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
   );
 }
 
+const PROVIDER_LOGOS: Record<string, { bg: string; fg: string; label: string }> = {
+  'openai':     { bg: '#10a37f', fg: '#fff', label: 'OAI' },
+  'anthropic':  { bg: '#d97757', fg: '#fff', label: 'ANT' },
+  'google':     { bg: '#4285f4', fg: '#fff', label: 'GEM' },
+  'deepseek':   { bg: '#1677ff', fg: '#fff', label: 'DS'  },
+  'meta-llama': { bg: '#0082fb', fg: '#fff', label: 'LLM' },
+  'qwen':       { bg: '#ff6900', fg: '#fff', label: 'QWN' },
+  'mistralai':  { bg: '#ff7000', fg: '#fff', label: 'MST' },
+};
+
+function ModelLogo({ modelId, size = 16 }: { modelId: string; size?: number }) {
+  const radius = Math.round(size * 0.3);
+  const fontSize = Math.max(Math.round(size * 0.38), 7);
+
+  if (!modelId.includes('/')) {
+    // Pollinations image-gen models (flux-schnell, flux, turbo)
+    return (
+      <span
+        style={{
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          width: size, height: size, borderRadius: radius,
+          background: 'linear-gradient(135deg,#ff4785,#a855f7)',
+          fontSize: Math.round(size * 0.65), lineHeight: 1, flexShrink: 0,
+        }}
+      >✦</span>
+    );
+  }
+
+  const prefix = modelId.split('/')[0];
+  const p = PROVIDER_LOGOS[prefix];
+
+  if (!p) {
+    return (
+      <span style={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        width: size, height: size, borderRadius: radius,
+        background: 'var(--ui-bg-card-hover)', color: 'var(--ui-text-2)',
+        fontSize, fontWeight: 700, flexShrink: 0, lineHeight: 1,
+      }}>AI</span>
+    );
+  }
+
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      width: size, height: size, borderRadius: radius,
+      background: p.bg, color: p.fg,
+      fontSize, fontWeight: 700, letterSpacing: '-0.3px', lineHeight: 1, flexShrink: 0,
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+    }}>
+      {p.label[0]}
+    </span>
+  );
+}
+
 function EmptyState({ catInfo, theme, onSend }: { catInfo: ReturnType<typeof getCategoryInfo>; theme: ProviderTheme; onSend: (s: string) => void }) {
   const suggestions: Record<string, string[]> = {
     text:          ['Explain how quantum computing works', 'Write a professional email template', 'Summarize the latest AI research'],
@@ -871,9 +908,9 @@ function EmptyState({ catInfo, theme, onSend }: { catInfo: ReturnType<typeof get
   );
 }
 
-const MessageBubble = memo(function MessageBubble({ message, modelIcon, theme, onRegenerate, versionEntry, onNavigateVersion }: {
+const MessageBubble = memo(function MessageBubble({ message, modelId, theme, onRegenerate, versionEntry, onNavigateVersion }: {
   message: Message;
-  modelIcon: string;
+  modelId: string;
   theme: ProviderTheme;
   onRegenerate?: () => void;
   versionEntry?: { versions: string[]; idx: number };
@@ -916,9 +953,9 @@ const MessageBubble = memo(function MessageBubble({ message, modelIcon, theme, o
 
   return (
     <div className="flex gap-3">
-      <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 mt-0.5"
+      <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5"
         style={{ background: 'var(--ui-bg-card)' }}>
-        {modelIcon}
+        <ModelLogo modelId={modelId} size={20} />
       </div>
       <div className="flex-1 min-w-0 space-y-1">
         {message.content && (

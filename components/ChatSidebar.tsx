@@ -40,20 +40,20 @@ export function ChatSidebar({ activeId, userId, onSelect, onNew }: Props) {
     setProfile(loadProfile(fallback));
   }, [session]);
 
-  const refresh = () => {
+  const refresh = useCallback(async () => {
     if (!userId) return;
-    setAllConvs(getHistory(userId));
-  };
+    const convs = await getHistory();
+    setAllConvs(convs);
+  }, [userId]);
 
-  useEffect(() => { refresh(); }, [userId]);
+  useEffect(() => { refresh(); }, [refresh]);
 
   useEffect(() => { refreshProfile(); }, [refreshProfile]);
 
   useEffect(() => {
-    const handler = () => refresh();
-    window.addEventListener('aion:history', handler);
-    return () => window.removeEventListener('aion:history', handler);
-  }, [userId]);
+    window.addEventListener('aion:history', refresh);
+    return () => window.removeEventListener('aion:history', refresh);
+  }, [refresh]);
 
   useEffect(() => {
     const handler = () => refreshProfile();
@@ -61,15 +61,15 @@ export function ChatSidebar({ activeId, userId, onSelect, onNew }: Props) {
     return () => window.removeEventListener('aion:profile', handler);
   }, [refreshProfile]);
 
-  const handleDelete = (e: React.MouseEvent, id: string) => {
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    deleteConversation(id, userId);
+    await deleteConversation(id);
     refresh();
   };
 
-  const handleStar = (e: React.MouseEvent, id: string) => {
+  const handleStar = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    toggleStarConversation(id, userId);
+    await toggleStarConversation(id);
     refresh();
   };
 

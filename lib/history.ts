@@ -5,7 +5,7 @@ import { Message } from '@/types';
 export interface Conversation {
   id: string;
   title: string;
-  modelId: string;   // OR model ID (e.g. 'google/gemini-2.0-flash-001') or legacy tier ('fast'|'balanced'|'pro')
+  modelId: string;   // OpenRouter model ID or legacy tier ('fast'|'balanced'|'pro')
   provider: string;  // category (e.g. 'text') or legacy provider ('gemini'|'deepseek'|'qwen')
   messages: Message[];
   starred?: boolean;
@@ -13,40 +13,38 @@ export interface Conversation {
   updatedAt: string;
 }
 
-function key(userId: string) {
-  return `aion_history_${userId}`;
-}
-
-export function getHistory(userId: string): Conversation[] {
-  if (typeof window === 'undefined' || !userId) return [];
+export async function getHistory(): Promise<Conversation[]> {
   try {
-    return JSON.parse(localStorage.getItem(key(userId)) ?? '[]');
+    const res = await fetch('/api/history');
+    if (!res.ok) return [];
+    return res.json();
   } catch {
     return [];
   }
 }
 
-export function saveConversation(conv: Conversation, userId: string) {
-  if (!userId) return;
-  const all = getHistory(userId);
-  const idx = all.findIndex((c) => c.id === conv.id);
-  if (idx >= 0) all[idx] = conv;
-  else all.unshift(conv);
-  localStorage.setItem(key(userId), JSON.stringify(all.slice(0, 100)));
+export async function saveConversation(conv: Conversation): Promise<void> {
+  await fetch('/api/history', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(conv),
+  });
 }
 
-export function deleteConversation(id: string, userId: string) {
-  if (!userId) return;
-  const all = getHistory(userId).filter((c) => c.id !== id);
-  localStorage.setItem(key(userId), JSON.stringify(all));
+export async function deleteConversation(id: string): Promise<void> {
+  await fetch('/api/history', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
 }
 
-export function toggleStarConversation(id: string, userId: string) {
-  if (!userId) return;
-  const all = getHistory(userId).map((c) =>
-    c.id === id ? { ...c, starred: !c.starred } : c
-  );
-  localStorage.setItem(key(userId), JSON.stringify(all));
+export async function toggleStarConversation(id: string): Promise<void> {
+  await fetch('/api/history', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
 }
 
 export function groupByDate(convs: Conversation[]) {
