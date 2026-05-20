@@ -602,15 +602,16 @@ export function SettingsModal({ onClose }: Props) {
 
   // Organizations
   interface Org { id: string; name: string; slug: string; memberCount: number; role: string; createdAt: string; }
+  interface OrgMember { userId: string; displayName: string; email: string; role: string; joinedAt: string; messages30d: number; credits30d: number; totalCreditsSpent: number; }
   const [orgs, setOrgs] = useState<Org[]>([]);
   const [newOrgName, setNewOrgName] = useState('');
   const [orgsLoading, setOrgsLoading] = useState(false);
-  const [inviteOrgId, setInviteOrgId] = useState('');
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteStatus, setInviteStatus] = useState('');
   const [inviteTokens, setInviteTokens] = useState<Record<string, string>>({});
   const [linkCopied, setLinkCopied] = useState<Record<string, boolean>>({});
   const [linkLoading, setLinkLoading] = useState<Record<string, boolean>>({});
+  const [expandedOrg, setExpandedOrg] = useState<string | null>(null);
+  const [orgMembers, setOrgMembers] = useState<Record<string, OrgMember[]>>({});
+  const [membersLoading, setMembersLoading] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     setDisplayName(localStorage.getItem('aion_display_name') || session?.user?.name || '');
@@ -692,20 +693,34 @@ export function SettingsModal({ onClose }: Props) {
     setOrgs((prev) => prev.filter((o) => o.id !== id));
   };
 
-  const inviteMember = async () => {
-    if (!inviteOrgId || !inviteEmail) return;
-    const res = await fetch('/api/orgs/members', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orgId: inviteOrgId, email: inviteEmail }),
-    });
-    const data = await res.json();
-    if (res.status === 404) {
-      setInviteStatus('User not found — share the invite link instead');
-    } else {
-      setInviteStatus(data.ok ? 'Added!' : (data.error ?? 'Error'));
+  const loadOrgMembers = async (orgId: string) => {
+    setMembersLoading((p) => ({ ...p, [orgId]: true }));
+    try {
+      const res = await fetch(`/api/orgs/usage?orgId=${orgId}`);
+      const data = await res.json();
+      if (Array.isArray(data)) setOrgMembers((p) => ({ ...p, [orgId]: data }));
+    } finally {
+      setMembersLoading((p) => ({ ...p, [orgId]: false }));
     }
-    if (data.ok) { setInviteEmail(''); setTimeout(() => setInviteStatus(''), 2500); }
+  };
+
+  const toggleExpand = (orgId: string) => {
+    if (expandedOrg === orgId) {
+      setExpandedOrg(null);
+    } else {
+      setExpandedOrg(orgId);
+      if (!orgMembers[orgId]) loadOrgMembers(orgId);
+    }
+  };
+
+  const removeMember = async (orgId: string, userId: string) => {
+    await fetch('/api/orgs/members', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orgId, userId }),
+    });
+    setOrgMembers((p) => ({ ...p, [orgId]: (p[orgId] ?? []).filter((m) => m.userId !== userId) }));
+    loadOrgs();
   };
 
   const getInviteToken = async (orgId: string): Promise<string | null> => {
@@ -1089,7 +1104,12 @@ export function SettingsModal({ onClose }: Props) {
               {/* ── ORGANIZATIONS ── */}
               {tab === 'orgs' && (
                 <div className="space-y-5">
-                  <h3 className="text-sm font-semibold" style={{ color: 'var(--ui-text-1)' }}>Teams</h3>
+                  <div>
+                    <h3 className="text-sm font-semibold" style={{ color: 'var(--ui-text-1)' }}>Teams</h3>
+                    <p className="text-xs mt-1" style={{ color: 'var(--ui-text-3)' }}>
+                      Create a team, invite people via link, and track everyone&apos;s usage.
+                    </p>
+                  </div>
 
                   {/* Create new org */}
                   <div className="flex gap-2">
@@ -1118,90 +1138,132 @@ export function SettingsModal({ onClose }: Props) {
                       <Loader2 size={16} className="animate-spin" style={{ color: 'var(--ui-text-3)' }} />
                     </div>
                   ) : orgs.length === 0 ? (
-                    <p className="text-xs text-center py-4" style={{ color: 'var(--ui-text-3)' }}>No teams yet</p>
+                    <p className="text-xs text-center py-4" style={{ color: 'var(--ui-text-3)' }}>No teams yet — create one above</p>
                   ) : (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       {orgs.map((o) => (
-                        <div key={o.id} className="rounded-xl p-3 space-y-2"
+                        <div key={o.id} className="rounded-xl overflow-hidden"
                           style={{ background: 'var(--ui-bg-card)', border: '1px solid var(--ui-border)' }}>
-                          <div className="flex items-center gap-2">
-                            <Building2 size={14} style={{ color: 'var(--ui-text-3)', flexShrink: 0 }} />
+
+                          {/* Team header row */}
+                          <div className="flex items-center gap-2 p-3">
+                            <Building2 size={14} style={{ color: '#8B5CF6', flexShrink: 0 }} />
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium truncate" style={{ color: 'var(--ui-text-1)' }}>{o.name}</p>
+                              <p className="text-sm font-semibold truncate" style={{ color: 'var(--ui-text-1)' }}>{o.name}</p>
                               <p className="text-xs" style={{ color: 'var(--ui-text-3)' }}>
-                                <Users size={10} className="inline mr-1" />{o.memberCount} member{o.memberCount !== 1 ? 's' : ''} · {o.role}
+                                {o.memberCount} member{o.memberCount !== 1 ? 's' : ''} · <span style={{ textTransform: 'capitalize' }}>{o.role}</span>
                               </p>
                             </div>
-                            {o.role === 'owner' && (
-                              <button onClick={() => deleteOrg(o.id)} className="p-1 rounded-lg"
+                            {/* Expand / collapse members */}
+                            <button
+                              onClick={() => toggleExpand(o.id)}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs transition-colors"
+                              style={{
+                                background: expandedOrg === o.id ? 'var(--ui-bg-card-hover)' : 'transparent',
+                                color: 'var(--ui-text-2)',
+                                border: '1px solid var(--ui-border)',
+                              }}
+                            >
+                              <Users size={11} />
+                              Members
+                            </button>
+                            {o.role === 'owner' ? (
+                              <button onClick={() => deleteOrg(o.id)} className="p-1 rounded-lg shrink-0"
                                 style={{ color: 'var(--ui-text-3)' }}
                                 onMouseEnter={(e) => (e.currentTarget.style.color = '#f87171')}
                                 onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--ui-text-3)')}>
                                 <Trash2 size={13} />
                               </button>
+                            ) : (
+                              <button
+                                onClick={() => removeMember(o.id, session?.user?.id ?? '')}
+                                className="text-xs px-2 py-1 rounded-lg shrink-0"
+                                style={{ color: '#f87171', border: '1px solid rgba(248,113,113,0.3)' }}
+                              >
+                                Leave
+                              </button>
                             )}
                           </div>
-                          {/* Invite section for owners/admins */}
+
+                          {/* Invite link row — always visible for owner/admin */}
                           {(o.role === 'owner' || o.role === 'admin') && (
-                            <div className="pt-2 border-t space-y-2" style={{ borderColor: 'var(--ui-border)' }}>
-                              {/* Copy invite link */}
-                              <div className="flex items-center gap-2">
-                                <div className="flex-1 px-2.5 py-1.5 rounded-lg text-xs font-mono truncate"
-                                  style={{ background: 'var(--ui-input-bg)', border: '1px solid var(--ui-input-border)', color: 'var(--ui-text-3)' }}>
-                                  {inviteTokens[o.id]
-                                    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/invite/${inviteTokens[o.id]}`
-                                    : 'Click "Copy link" to generate…'}
+                            <div className="flex items-center gap-2 px-3 pb-3">
+                              <div className="flex-1 px-2.5 py-1.5 rounded-lg text-xs font-mono truncate"
+                                style={{ background: 'var(--ui-input-bg)', border: '1px solid var(--ui-input-border)', color: 'var(--ui-text-3)' }}>
+                                {inviteTokens[o.id]
+                                  ? `${typeof window !== 'undefined' ? window.location.origin : ''}/invite/${inviteTokens[o.id]}`
+                                  : 'Click Copy to generate invite link…'}
+                              </div>
+                              <button
+                                onClick={() => copyInviteLink(o.id)}
+                                disabled={linkLoading[o.id]}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-white shrink-0 disabled:opacity-50"
+                                style={{ background: linkCopied[o.id] ? '#22C55E' : 'linear-gradient(135deg,#8B5CF6,#3B82F6)' }}
+                              >
+                                {linkLoading[o.id] ? <Loader2 size={11} className="animate-spin" />
+                                  : linkCopied[o.id] ? <><Check size={11} /> Copied!</>
+                                  : <><Copy size={11} /> Copy</>}
+                              </button>
+                              <button
+                                onClick={() => regenerateLink(o.id)}
+                                disabled={linkLoading[o.id]}
+                                title="Regenerate invite link (invalidates old one)"
+                                className="px-2 py-1.5 rounded-lg text-xs disabled:opacity-40"
+                                style={{ color: 'var(--ui-text-3)', border: '1px solid var(--ui-border)' }}
+                                onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--ui-text-1)')}
+                                onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--ui-text-3)')}
+                              >↺</button>
+                            </div>
+                          )}
+
+                          {/* Members panel */}
+                          {expandedOrg === o.id && (
+                            <div className="border-t px-3 py-3 space-y-2" style={{ borderColor: 'var(--ui-border)', background: 'var(--ui-bg)' }}>
+                              {membersLoading[o.id] ? (
+                                <div className="flex justify-center py-3">
+                                  <Loader2 size={14} className="animate-spin" style={{ color: 'var(--ui-text-3)' }} />
                                 </div>
-                                <button
-                                  onClick={() => copyInviteLink(o.id)}
-                                  disabled={linkLoading[o.id]}
-                                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-white shrink-0 disabled:opacity-50"
-                                  style={{ background: linkCopied[o.id] ? '#22C55E' : 'linear-gradient(135deg,#8B5CF6,#3B82F6)' }}
-                                >
-                                  {linkLoading[o.id] ? (
-                                    <Loader2 size={11} className="animate-spin" />
-                                  ) : linkCopied[o.id] ? (
-                                    <><Check size={11} /> Copied!</>
-                                  ) : (
-                                    <><Copy size={11} /> Copy link</>
-                                  )}
-                                </button>
-                                <button
-                                  onClick={() => regenerateLink(o.id)}
-                                  disabled={linkLoading[o.id]}
-                                  title="Regenerate link"
-                                  className="px-2 py-1.5 rounded-lg text-xs disabled:opacity-40"
-                                  style={{ color: 'var(--ui-text-3)', border: '1px solid var(--ui-border)' }}
-                                  onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--ui-text-1)')}
-                                  onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--ui-text-3)')}
-                                >
-                                  ↺
-                                </button>
-                              </div>
-                              {/* Email invite (existing users) */}
-                              <div className="flex gap-2">
-                                <input
-                                  type="email"
-                                  value={inviteOrgId === o.id ? inviteEmail : ''}
-                                  onChange={(e) => { setInviteOrgId(o.id); setInviteEmail(e.target.value); setInviteStatus(''); }}
-                                  placeholder="Add by email (existing users)…"
-                                  className="flex-1 px-2.5 py-1.5 rounded-lg text-xs outline-none"
-                                  style={{ background: 'var(--ui-input-bg)', border: '1px solid var(--ui-input-border)', color: 'var(--ui-text-1)' }}
-                                  onKeyDown={(e) => e.key === 'Enter' && inviteMember()}
-                                />
-                                <button
-                                  onClick={inviteMember}
-                                  disabled={!inviteEmail.trim() || inviteOrgId !== o.id}
-                                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-40 shrink-0"
-                                  style={{ background: '#8B5CF6' }}
-                                >
-                                  Add
-                                </button>
-                              </div>
-                              {inviteStatus && inviteOrgId === o.id && (
-                                <p className="text-xs" style={{ color: inviteStatus.startsWith('User not found') ? '#f87171' : inviteStatus === 'Added!' ? '#22C55E' : '#f87171' }}>
-                                  {inviteStatus}
-                                </p>
+                              ) : (orgMembers[o.id] ?? []).length === 0 ? (
+                                <p className="text-xs text-center py-2" style={{ color: 'var(--ui-text-3)' }}>No members yet</p>
+                              ) : (
+                                <>
+                                  {/* Header */}
+                                  <div className="grid text-[10px] font-medium px-2 pb-1"
+                                    style={{ gridTemplateColumns: '1fr 60px 60px 60px auto', color: 'var(--ui-text-3)' }}>
+                                    <span>Member</span>
+                                    <span className="text-right">Role</span>
+                                    <span className="text-right">Msgs/30d</span>
+                                    <span className="text-right">Credits</span>
+                                    <span />
+                                  </div>
+                                  {(orgMembers[o.id] ?? []).map((m) => (
+                                    <div key={m.userId}
+                                      className="grid items-center gap-1 px-2 py-1.5 rounded-lg"
+                                      style={{ gridTemplateColumns: '1fr 60px 60px 60px auto', background: 'var(--ui-bg-card)' }}>
+                                      <div className="min-w-0">
+                                        <p className="text-xs font-medium truncate" style={{ color: 'var(--ui-text-1)' }}>{m.displayName}</p>
+                                        <p className="text-[10px] truncate" style={{ color: 'var(--ui-text-3)' }}>{m.email}</p>
+                                      </div>
+                                      <p className="text-[10px] text-right capitalize" style={{ color: 'var(--ui-text-3)' }}>{m.role}</p>
+                                      <p className="text-xs text-right font-mono" style={{ color: 'var(--ui-text-2)' }}>{m.messages30d}</p>
+                                      <p className="text-xs text-right font-mono" style={{ color: 'var(--ui-text-2)' }}>{m.totalCreditsSpent}</p>
+                                      <div className="flex justify-end">
+                                        {o.role === 'owner' && m.role !== 'owner' && (
+                                          <button
+                                            onClick={() => removeMember(o.id, m.userId)}
+                                            className="p-1 rounded"
+                                            style={{ color: 'var(--ui-text-3)' }}
+                                            onMouseEnter={(e) => (e.currentTarget.style.color = '#f87171')}
+                                            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--ui-text-3)')}
+                                            title="Remove member"
+                                          >
+                                            <Trash2 size={11} />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </>
                               )}
                             </div>
                           )}
