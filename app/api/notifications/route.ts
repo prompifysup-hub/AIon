@@ -2,12 +2,14 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { ensureUserInDb } from '@/lib/ensure-user';
 
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) return NextResponse.json([]);
 
+    const dbUserId = await ensureUserInDb(session);
     const { rows } = await db.query<{
       id: string; type: string; title: string; body: string | null;
       is_read: boolean; created_at: string;
@@ -17,7 +19,7 @@ export async function GET() {
        WHERE user_id = $1
        ORDER BY created_at DESC
        LIMIT 50`,
-      [session.user.id],
+      [dbUserId],
     );
 
     return NextResponse.json(rows.map((r) => ({
@@ -39,18 +41,19 @@ export async function PATCH(req: Request) {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+    const dbUserId = await ensureUserInDb(session);
     const body = await req.json();
     const id: string | null = body.id ?? null;
 
     if (id) {
       await db.query(
         `UPDATE notifications SET is_read = TRUE WHERE id = $1 AND user_id = $2`,
-        [id, session.user.id],
+        [id, dbUserId],
       );
     } else {
       await db.query(
         `UPDATE notifications SET is_read = TRUE WHERE user_id = $1`,
-        [session.user.id],
+        [dbUserId],
       );
     }
 

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { ensureUserInDb } from '@/lib/ensure-user';
 
 export async function GET(req: Request) {
   try {
@@ -48,12 +49,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
     }
 
+    const dbUserId = await ensureUserInDb(session);
     await db.query(
       `INSERT INTO bot_reviews (bot_id, user_id, rating, review_text)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT (bot_id, user_id)
        DO UPDATE SET rating = EXCLUDED.rating, review_text = EXCLUDED.review_text, updated_at = NOW()`,
-      [botId, session.user.id, rating, reviewText ?? null],
+      [botId, dbUserId, rating, reviewText ?? null],
     );
     await db.query(
       `UPDATE bots SET like_count = (

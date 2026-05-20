@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { ensureUserInDb } from '@/lib/ensure-user';
 
 export async function GET(req: Request) {
   try {
@@ -48,9 +49,10 @@ export async function POST(req: Request) {
     if (!orgId || !email) return NextResponse.json({ error: 'orgId and email required' }, { status: 400 });
 
     // Verify requester is owner/admin
+    const requesterId = await ensureUserInDb(session);
     const { rows: authRows } = await db.query(
       `SELECT role FROM organization_members WHERE organization_id = $1 AND user_id = $2`,
-      [orgId, session.user.id],
+      [orgId, requesterId],
     );
     if (!authRows[0] || !['owner', 'admin'].includes(authRows[0].role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });

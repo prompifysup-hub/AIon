@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { ensureUserInDb } from '@/lib/ensure-user';
 
 export async function GET() {
   try {
@@ -10,20 +11,21 @@ export async function GET() {
       return NextResponse.json({ balance: 0, loggedIn: false });
     }
 
+    const dbUserId = await ensureUserInDb(session);
+
     const { rows } = await db.query<{
       balance: string; lifetime_earned: string; lifetime_spent: string;
     }>(
       `SELECT balance, lifetime_earned, lifetime_spent FROM user_credits WHERE user_id = $1`,
-      [session.user.id],
+      [dbUserId],
     );
 
     if (!rows[0]) {
-      // Auto-init credits for pre-migration users
       await db.query(
         `INSERT INTO user_credits (user_id, balance, lifetime_earned)
          VALUES ($1, 1000, 1000)
          ON CONFLICT (user_id) DO NOTHING`,
-        [session.user.id],
+        [dbUserId],
       );
       return NextResponse.json({ balance: 1000, lifetime_earned: 1000, lifetime_spent: 0, loggedIn: true });
     }

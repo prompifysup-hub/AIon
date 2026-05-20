@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { ensureUserInDb } from '@/lib/ensure-user';
 import { createHash, randomBytes } from 'crypto';
 
 function hashKey(key: string) {
@@ -13,6 +14,8 @@ export async function GET() {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+    const userId = await ensureUserInDb(session);
+
     const { rows } = await db.query<{
       id: string; name: string | null; key_prefix: string; permissions: object;
       rate_limit_per_minute: number; last_used_at: string | null;
@@ -23,7 +26,7 @@ export async function GET() {
        FROM api_keys
        WHERE user_id = $1
        ORDER BY created_at DESC`,
-      [session.user.id],
+      [userId],
     );
 
     return NextResponse.json(
@@ -51,6 +54,7 @@ export async function POST(req: Request) {
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { name } = await req.json();
+    const userId = await ensureUserInDb(session);
 
     const rawKey = `aion_${randomBytes(32).toString('hex')}`;
     const prefix = rawKey.slice(0, 12);
@@ -60,7 +64,7 @@ export async function POST(req: Request) {
       `INSERT INTO api_keys (user_id, name, key_hash, key_prefix)
        VALUES ($1, $2, $3, $4)
        RETURNING id`,
-      [session.user.id, name ?? 'My API Key', keyHash, prefix],
+      [userId, name ?? 'My API Key', keyHash, prefix],
     );
 
     return NextResponse.json({ id: String(rows[0].id), key: rawKey, prefix });
@@ -75,10 +79,11 @@ export async function DELETE(req: Request) {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+    const userId = await ensureUserInDb(session);
     const { id } = await req.json();
     await db.query(
       `DELETE FROM api_keys WHERE id = $1 AND user_id = $2`,
-      [id, session.user.id],
+      [id, userId],
     );
 
     return NextResponse.json({ ok: true });

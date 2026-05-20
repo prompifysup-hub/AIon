@@ -2,12 +2,12 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db, ensureSchema } from '@/lib/db';
+import { ensureUserInDb } from '@/lib/ensure-user';
 
 export async function GET() {
   try {
     await ensureSchema();
     const session = await getServerSession(authOptions);
-    const userId = session?.user?.id ?? null;
 
     const { rows: bots } = await db.query<{
       id: string; slug: string; name: string; description: string | null;
@@ -22,12 +22,15 @@ export async function GET() {
     );
 
     let favoriteIds = new Set<string>();
-    if (userId) {
-      const { rows: favRows } = await db.query<{ bot_id: string }>(
-        `SELECT bot_id FROM user_bot_favorites WHERE user_id = $1`,
-        [userId],
-      );
-      favoriteIds = new Set(favRows.map((r) => String(r.bot_id)));
+    if (session?.user?.id) {
+      try {
+        const dbUserId = await ensureUserInDb(session);
+        const { rows: favRows } = await db.query<{ bot_id: string }>(
+          `SELECT bot_id FROM user_bot_favorites WHERE user_id = $1`,
+          [dbUserId],
+        );
+        favoriteIds = new Set(favRows.map((r) => String(r.bot_id)));
+      } catch { /* not critical */ }
     }
 
     return NextResponse.json(
@@ -60,16 +63,18 @@ export async function POST(req: Request) {
     const { botId, action } = await req.json();
     if (!botId) return NextResponse.json({ error: 'botId required' }, { status: 400 });
 
+    const dbUserId = await ensureUserInDb(session);
+
     if (action === 'unfavorite') {
       await db.query(
         `DELETE FROM user_bot_favorites WHERE user_id = $1 AND bot_id = $2`,
-        [session.user.id, botId],
+        [dbUserId, botId],
       );
     } else {
       await db.query(
         `INSERT INTO user_bot_favorites (user_id, bot_id) VALUES ($1, $2)
          ON CONFLICT (user_id, bot_id) DO NOTHING`,
-        [session.user.id, botId],
+        [dbUserId, botId],
       );
     }
 

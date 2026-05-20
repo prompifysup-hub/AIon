@@ -4,6 +4,7 @@ import OpenAI from 'openai';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { ensureUserInDb } from '@/lib/ensure-user';
 import { getModel, providerModelMap, Provider, SYSTEM_PROMPT } from '@/lib/models';
 import { retrieve, getDocs } from '@/lib/rag';
 
@@ -40,12 +41,15 @@ export async function POST(req: Request) {
 
     const { messages, modelId, provider = 'gemini', category, attachments = [] } = await req.json();
 
-    // Deduct 1 credit; auto-init at 1000 for pre-migration users
+    // Ensure user exists in DB (handles stale JWTs / pre-migration sessions)
+    const dbUserId = await ensureUserInDb(session);
+
+    // Deduct 1 credit; auto-init at 1000 for new users
     await db.query(
       `INSERT INTO user_credits (user_id, balance, lifetime_earned)
        VALUES ($1, 1000, 1000)
        ON CONFLICT (user_id) DO NOTHING`,
-      [session.user.id],
+      [dbUserId],
     );
     const creditResult = await db.query<{ balance: string }>(
       `UPDATE user_credits
@@ -54,7 +58,7 @@ export async function POST(req: Request) {
            updated_at = NOW()
        WHERE user_id = $1 AND balance > 0
        RETURNING balance`,
-      [session.user.id],
+      [dbUserId],
     );
     if (creditResult.rows.length === 0) {
       return NextResponse.json({ error: 'Insufficient credits. Please contact support.' }, { status: 402 });
@@ -63,7 +67,7 @@ export async function POST(req: Request) {
     await db.query(
       `INSERT INTO credit_transactions (user_id, amount, balance_after, type, description)
        VALUES ($1, -1, $2, 'deduction', 'AI message')`,
-      [session.user.id, newBalance],
+      [dbUserId, newBalance],
     );
     await db.query(
       `INSERT INTO daily_usage_stats (user_id, date, messages_sent, credits_used)
@@ -71,16 +75,15 @@ export async function POST(req: Request) {
        ON CONFLICT (user_id, date) DO UPDATE SET
          messages_sent = daily_usage_stats.messages_sent + 1,
          credits_used  = daily_usage_stats.credits_used  + 1`,
-      [session.user.id],
+      [dbUserId],
     );
-    // Notify when credits are low
     if (newBalance === 50) {
       await db.query(
         `INSERT INTO notifications (user_id, type, title, body)
          VALUES ($1, 'credits_low', 'Credits running low', 'You have 50 credits remaining.')
          ON CONFLICT DO NOTHING`,
-        [session.user.id],
-      ).catch(() => {/* ignore duplicate */});
+        [dbUserId],
+      ).catch(() => {});
     }
 
     const now = new Date().toLocaleString('en-US', {

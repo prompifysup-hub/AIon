@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { ensureUserInDb } from '@/lib/ensure-user';
 
 export async function POST(req: Request) {
   try {
@@ -13,10 +14,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    const dbUserId = await ensureUserInDb(session);
     await db.query(
       `INSERT INTO reports (reporter_id, reported_type, reported_id, reason, description)
        VALUES ($1, $2, $3, $4, $5)`,
-      [session.user.id, reportedType, reportedId, reason, description ?? null],
+      [dbUserId, reportedType, reportedId, reason, description ?? null],
     );
 
     return NextResponse.json({ ok: true });

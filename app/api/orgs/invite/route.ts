@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db, ensureSchema } from '@/lib/db';
+import { ensureUserInDb } from '@/lib/ensure-user';
 import { randomUUID } from 'crypto';
 
 async function assertOrgRole(orgId: string, userId: string) {
@@ -23,7 +24,8 @@ export async function GET(req: Request) {
     const orgId = searchParams.get('orgId');
     if (!orgId) return NextResponse.json({ error: 'orgId required' }, { status: 400 });
 
-    if (!await assertOrgRole(orgId, session.user.id)) {
+    const userId = await ensureUserInDb(session);
+    if (!await assertOrgRole(orgId, userId)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -39,7 +41,7 @@ export async function GET(req: Request) {
     const token = randomUUID();
     await db.query(
       `INSERT INTO organization_invites (org_id, token, created_by) VALUES ($1, $2, $3)`,
-      [orgId, token, session.user.id],
+      [orgId, token, userId],
     );
     return NextResponse.json({ token });
   } catch (err) {
@@ -57,7 +59,8 @@ export async function POST(req: Request) {
     const { orgId } = await req.json();
     if (!orgId) return NextResponse.json({ error: 'orgId required' }, { status: 400 });
 
-    if (!await assertOrgRole(orgId, session.user.id)) {
+    const userId = await ensureUserInDb(session);
+    if (!await assertOrgRole(orgId, userId)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -67,7 +70,7 @@ export async function POST(req: Request) {
     await db.query(`DELETE FROM organization_invites WHERE org_id = $1`, [orgId]);
     await db.query(
       `INSERT INTO organization_invites (org_id, token, created_by) VALUES ($1, $2, $3)`,
-      [orgId, token, session.user.id],
+      [orgId, token, userId],
     );
 
     return NextResponse.json({ token });

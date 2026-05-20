@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { ensureUserInDb } from '@/lib/ensure-user';
 
 // GET — return org info for this invite token (no auth required)
 export async function GET(
@@ -60,12 +61,13 @@ export async function POST(
     }
 
     const orgId = rows[0].org_id;
+    const userId = await ensureUserInDb(session);
 
     await db.query(
       `INSERT INTO organization_members (organization_id, user_id, role)
        VALUES ($1, $2, 'member')
        ON CONFLICT (organization_id, user_id) DO NOTHING`,
-      [orgId, session.user.id],
+      [orgId, userId],
     );
 
     return NextResponse.json({ ok: true, orgId: String(orgId) });

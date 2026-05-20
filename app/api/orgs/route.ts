@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { db } from '@/lib/db';
+import { db, ensureSchema } from '@/lib/db';
+import { ensureUserInDb } from '@/lib/ensure-user';
 
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const userId = await ensureUserInDb(session);
 
     const { rows } = await db.query<{
       id: string; name: string; slug: string; logo_url: string | null;
@@ -20,7 +23,7 @@ export async function GET() {
        LEFT JOIN organization_members om2 ON om2.organization_id = o.id
        GROUP BY o.id, om.role
        ORDER BY o.created_at DESC`,
-      [session.user.id],
+      [userId],
     );
 
     return NextResponse.json(
@@ -49,18 +52,21 @@ export async function POST(req: Request) {
     const { name } = await req.json();
     if (!name?.trim()) return NextResponse.json({ error: 'Name is required' }, { status: 400 });
 
+    await ensureSchema();
+    const userId = await ensureUserInDb(session);
+
     const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 50)
       + '-' + Math.random().toString(36).slice(2, 6);
 
     const { rows } = await db.query<{ id: string }>(
       `INSERT INTO organizations (name, slug, owner_id) VALUES ($1, $2, $3) RETURNING id`,
-      [name.trim(), slug, session.user.id],
+      [name.trim(), slug, userId],
     );
     const orgId = rows[0].id;
 
     await db.query(
       `INSERT INTO organization_members (organization_id, user_id, role) VALUES ($1, $2, 'owner')`,
-      [orgId, session.user.id],
+      [orgId, userId],
     );
 
     return NextResponse.json({ id: String(orgId), slug });
@@ -75,10 +81,11 @@ export async function DELETE(req: Request) {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+    const userId = await ensureUserInDb(session);
     const { id } = await req.json();
     await db.query(
       `DELETE FROM organizations WHERE id = $1 AND owner_id = $2`,
-      [id, session.user.id],
+      [id, userId],
     );
 
     return NextResponse.json({ ok: true });
