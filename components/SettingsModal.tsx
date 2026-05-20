@@ -7,6 +7,7 @@ import {
   Bug, FileText, Shield, Headphones, Send, Loader2,
   Key, Building2, Plus, Trash2, Copy, Check, Users,
   Volume2, VolumeX, ChevronLeft, ChevronRight, BookOpen,
+  MessageSquare, LayoutGrid, Coins, Bot, Zap, Bell, Code,
 } from 'lucide-react';
 import { useTheme } from '@/lib/theme';
 import { ACCENT_PRESETS, saveAccent } from '@/lib/accent';
@@ -503,6 +504,7 @@ const TUTORIAL_TOPICS = [
   {
     id: 'chat',
     emoji: '💬',
+    icon: MessageSquare,
     title: 'Sending a Message',
     text: 'Click New chat in the sidebar to start a fresh conversation. Pick a model from the toolbar — click the model name to switch. Type in the input box and press Enter to send, or Shift Enter for a new line. You can also drag and drop files, or click the paperclip icon to attach documents and images. If you want to stop a response mid-way, press the red stop button.',
     Visual: VisualChat,
@@ -510,6 +512,7 @@ const TUTORIAL_TOPICS = [
   {
     id: 'cats',
     emoji: '🗂️',
+    icon: LayoutGrid,
     title: 'AI Category Types',
     text: 'AIon supports six types of AI. Text is for general chat. Image generates pictures from your description — just type something like "generate an image of a sunset". Audio creates music in styles like Classical, Jazz, or Pop. Speech converts your words into spoken MP3 audio in different languages. Document helps write formatted documents, spreadsheets, and presentations. Study creates interactive exams, flashcards, and diagrams like flowcharts and mind maps.',
     Visual: VisualCategories,
@@ -517,6 +520,7 @@ const TUTORIAL_TOPICS = [
   {
     id: 'credits',
     emoji: '🪙',
+    icon: Coins,
     title: 'Credits & Usage',
     text: 'You start with 1,000 free credits when you sign up. Every AI message costs 1 credit. Your balance is shown at the bottom of the sidebar next to the coin icon. When your balance drops to 50, a warning appears and you receive a notification. You can track your total usage in the credits history. The balance refreshes automatically after each message you send.',
     Visual: VisualCredits,
@@ -524,6 +528,7 @@ const TUTORIAL_TOPICS = [
   {
     id: 'bots',
     emoji: '🤖',
+    icon: Bot,
     title: 'Bot Marketplace',
     text: 'Click the store icon at the top of the sidebar to open the Bot Marketplace. Browse all available AI bots and filter by category or search by name. Click the heart icon to add a bot to your favorites — your favorites appear first. Click the star icon to read reviews or leave your own rating from 1 to 5 stars. Click Chat to immediately start talking to that bot. You can also report a bot using the flag icon if you find it inappropriate.',
     Visual: VisualMarketplace,
@@ -531,6 +536,7 @@ const TUTORIAL_TOPICS = [
   {
     id: 'actions',
     emoji: '🛠️',
+    icon: Zap,
     title: 'Message Actions',
     text: 'Under every AI response you will find action buttons. Copy saves the plain text to your clipboard. Speak reads the response aloud using your device voice — click again to stop. Thumbs up rates a response as good; thumbs down marks it as unhelpful. Your feedback is saved and helps improve future responses. Redo regenerates a completely new answer to the same question. After regenerating, use the left and right arrows to browse all versions side by side.',
     Visual: VisualMessageActions,
@@ -538,6 +544,7 @@ const TUTORIAL_TOPICS = [
   {
     id: 'notifs',
     emoji: '🔔',
+    icon: Bell,
     title: 'Notifications',
     text: 'The bell icon at the top of the sidebar shows your notifications. A red dot appears when you have unread messages. Click the bell to open the panel and read them. You will receive a welcome notification when you first sign up. When your credits fall to 50, a low-credits alert will appear here automatically. Click Mark all read to clear the badge. Notifications also appear after important account events.',
     Visual: VisualNotifications,
@@ -545,7 +552,8 @@ const TUTORIAL_TOPICS = [
   {
     id: 'settings',
     emoji: '⚙️',
-    title: 'Settings & Developer Tools',
+    icon: Code,
+    title: 'Settings & Dev Tools',
     text: 'Open Settings from the gear icon at the bottom of the sidebar. Profile lets you change your display name, username, and avatar photo. General controls the dark or light theme and the accent color throughout the app. API Keys lets you generate secret keys to access AIon from your own code or applications — copy the key immediately after creating it because it is only shown once. Teams lets you create a shared workspace and invite colleagues by email. They will appear as members once they accept.',
     Visual: VisualSettings,
   },
@@ -1279,32 +1287,40 @@ export function SettingsModal({ onClose }: Props) {
                 const topic = TUTORIAL_TOPICS[tutorialStep];
                 const Visual = topic.Visual;
                 return (
-                  <div className="flex flex-col h-full" style={{ gap: 0 }}>
-                    {/* Topic pills */}
-                    <div className="flex flex-wrap gap-1.5 mb-4">
-                      {TUTORIAL_TOPICS.map((t, i) => (
-                        <button
-                          key={t.id}
-                          onClick={() => { setTutorialStep(i); window.speechSynthesis?.cancel(); setIsSpeaking(false); }}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] transition-colors"
-                          style={{
-                            background: tutorialStep === i ? 'var(--ui-bg-card-hover)' : 'var(--ui-bg-card)',
-                            border: `1px solid ${tutorialStep === i ? 'var(--ui-input-border)' : 'var(--ui-border)'}`,
-                            color: tutorialStep === i ? 'var(--ui-text-1)' : 'var(--ui-text-3)',
-                            fontWeight: tutorialStep === i ? 600 : 400,
-                          }}
-                        >
-                          <span>{t.emoji}</span>
-                          <span className="hidden sm:inline">{t.title}</span>
-                        </button>
-                      ))}
-                    </div>
+                  <div className="flex h-full min-h-0" style={{ margin: '-24px', overflow: 'hidden' }}>
+                    {/* Left topic nav — same style as settings left nav */}
+                    <nav className="w-40 shrink-0 border-r py-3 px-2 space-y-0.5 overflow-y-auto"
+                      style={{ borderColor: 'var(--ui-border)', background: 'var(--ui-bg-rail)' }}>
+                      {TUTORIAL_TOPICS.map((t, i) => {
+                        const Icon = t.icon;
+                        const active = tutorialStep === i;
+                        return (
+                          <button
+                            key={t.id}
+                            onClick={() => { setTutorialStep(i); window.speechSynthesis?.cancel(); setIsSpeaking(false); }}
+                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-left transition-colors"
+                            style={{
+                              background: active ? 'var(--ui-bg-card-hover)' : 'transparent',
+                              color: active ? 'var(--ui-text-1)' : 'var(--ui-text-2)',
+                              fontWeight: active ? 500 : 400,
+                            }}
+                            onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--ui-bg-card)'; }}
+                            onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+                          >
+                            <Icon size={14} />
+                            <span className="truncate">{t.title}</span>
+                          </button>
+                        );
+                      })}
+                    </nav>
 
+                    {/* Right content */}
+                    <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4 min-w-0">
                     {/* Visual illustration */}
                     <Visual />
 
                     {/* Text + navigation */}
-                    <div className="mt-4 flex flex-col gap-3" style={{ flex: 1 }}>
+                    <div className="flex flex-col gap-3" style={{ flex: 1 }}>
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="text-xs font-semibold mb-1" style={{ color: 'var(--ui-text-3)' }}>
@@ -1384,6 +1400,7 @@ export function SettingsModal({ onClose }: Props) {
                           )}
                         </button>
                       </div>
+                    </div>
                     </div>
                   </div>
                 );
