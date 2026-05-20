@@ -6,6 +6,7 @@ import {
   X, User, Settings, HelpCircle, Sun, Moon, Upload,
   Bug, FileText, Shield, Headphones, Send, Loader2,
   Key, Building2, Plus, Trash2, Copy, Check, Users,
+  Volume2, VolumeX, ChevronLeft, ChevronRight, BookOpen,
 } from 'lucide-react';
 import { useTheme } from '@/lib/theme';
 import { ACCENT_PRESETS, saveAccent } from '@/lib/accent';
@@ -14,7 +15,7 @@ interface Props {
   onClose: () => void;
 }
 
-type Tab = 'profile' | 'general' | 'keys' | 'orgs' | 'help';
+type Tab = 'profile' | 'general' | 'keys' | 'orgs' | 'help' | 'tutorial';
 type Dialog = null | 'help-center' | 'report-bug' | 'privacy' | 'tos';
 
 // ─── Sub-dialog: contact form ────────────────────────────────────────────────
@@ -257,6 +258,299 @@ const TOS_CONTENT = (
   </>
 );
 
+// ─── Tutorial visual illustrations ───────────────────────────────────────────
+
+const S = {
+  card:  { background: 'var(--ui-bg-card)',        border: '1px solid var(--ui-border)', borderRadius: 8  } as React.CSSProperties,
+  input: { background: 'var(--ui-input-bg)',       border: '1px solid var(--ui-border)', borderRadius: 6  } as React.CSSProperties,
+  pill:  { background: 'rgba(139,92,246,0.18)',    border: '1px solid rgba(139,92,246,0.4)', borderRadius: 20 } as React.CSSProperties,
+  badge: { background: '#8B5CF6', borderRadius: 6 } as React.CSSProperties,
+  t1:    { color: 'var(--ui-text-1)'  } as React.CSSProperties,
+  t2:    { color: 'var(--ui-text-2)'  } as React.CSSProperties,
+  t3:    { color: 'var(--ui-text-3)'  } as React.CSSProperties,
+};
+
+function VisualChat() {
+  return (
+    <div style={{ ...S.card, overflow: 'hidden', fontSize: 10, display: 'flex', flexDirection: 'column', height: 164 }}>
+      <div style={{ background: 'var(--ui-bg-card)', borderBottom: '1px solid var(--ui-border)', padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#8B5CF6' }} />
+        <span style={S.t3}>AIon</span>
+        <span style={{ flex: 1 }} />
+        <span style={{ ...S.t3, background: 'var(--ui-bg)', borderRadius: 6, padding: '2px 6px' }}>⚡ Gemini Flash ▾</span>
+      </div>
+      <div style={{ flex: 1, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 7, overflow: 'hidden' }}>
+        <div style={{ display: 'flex', gap: 5, alignItems: 'flex-start' }}>
+          <div style={{ width: 16, height: 16, borderRadius: '50%', background: 'var(--ui-bg-card-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, flexShrink: 0 }}>🤖</div>
+          <div style={{ ...S.card, padding: '4px 8px', ...S.t1, maxWidth: '80%', lineHeight: 1.4 }}>Hello! How can I help you today?</div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <div style={{ ...S.pill, padding: '4px 8px', ...S.t1, maxWidth: '75%', lineHeight: 1.4 }}>Tell me a fun fact!</div>
+        </div>
+      </div>
+      <div style={{ padding: '0 8px 8px' }}>
+        <div style={{ ...S.input, padding: '5px 8px', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={S.t3}>📎</span>
+          <span style={{ ...S.t3, flex: 1 }}>Type your message…</span>
+          <span style={S.t3}>🎤</span>
+          <div style={{ ...S.badge, width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ color: 'white', fontSize: 9 }}>→</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VisualCategories() {
+  const cats = [
+    { e: '💬', n: 'Text',          c: '#8B5CF6' },
+    { e: '🎨', n: 'Image',         c: '#F97316' },
+    { e: '🎵', n: 'Audio',         c: '#F59E0B' },
+    { e: '🗣️', n: 'Speech',        c: '#EF4444' },
+    { e: '📄', n: 'Document',      c: '#06B6D4' },
+    { e: '📚', n: 'Study',         c: '#10B981' },
+  ];
+  return (
+    <div style={{ ...S.card, padding: 12, height: 164, display: 'flex', flexDirection: 'column', gap: 8, overflow: 'hidden' }}>
+      <p style={{ ...S.t3, fontSize: 9, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Pick a Category</p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+        {cats.map((c) => (
+          <div key={c.n} style={{ ...S.card, padding: '7px 4px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, cursor: 'default' }}>
+            <div style={{ width: 28, height: 28, borderRadius: 8, background: `${c.c}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>{c.e}</div>
+            <span style={{ fontSize: 9, ...S.t2 }}>{c.n}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function VisualCredits() {
+  return (
+    <div style={{ ...S.card, overflow: 'hidden', fontSize: 10, height: 164 }}>
+      <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <div style={{ width: 22, height: 22, borderRadius: 7, background: 'linear-gradient(135deg,#8B5CF6,#3B82F6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10 }}>✦</div>
+          <span style={{ fontWeight: 600, fontSize: 11, ...S.t1 }}>AIon</span>
+        </div>
+        <div style={{ ...S.input, padding: '5px 8px', ...S.t3 }}>[+ New chat]</div>
+
+        <div style={{ ...S.card, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ fontSize: 12 }}>🪙</span>
+            <span style={{ ...S.t2, fontWeight: 500 }}>850 credits</span>
+            <span style={{ marginLeft: 'auto', fontSize: 9, color: '#F59E0B' }}>⚠ low at 50</span>
+          </div>
+          <div style={{ height: 5, borderRadius: 3, background: 'var(--ui-border)', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: '85%', borderRadius: 3, background: 'linear-gradient(90deg,#8B5CF6,#3B82F6)' }} />
+          </div>
+          <div style={{ ...S.t3, fontSize: 9 }}>1 credit per AI message · 1000 on signup</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VisualMarketplace() {
+  const bots = [
+    { e: '⚡', n: 'Gemini Flash', d: 'Fast & efficient', stars: 5 },
+    { e: '🧠', n: 'Gemini Pro',   d: 'Deep reasoning',   stars: 5 },
+    { e: '💻', n: 'Code Assist',  d: 'Programming help',  stars: 4 },
+    { e: '🎨', n: 'Image Creator',d: 'Generate images',   stars: 5 },
+  ];
+  return (
+    <div style={{ ...S.card, padding: '10px 12px', height: 164, display: 'flex', flexDirection: 'column', gap: 8, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontSize: 11, ...S.t1, fontWeight: 600 }}>🏪 Bot Marketplace</span>
+        <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+          {['All','Text','❤️'].map(f => (
+            <span key={f} style={{ ...S.card, padding: '1px 6px', fontSize: 9, ...S.t3 }}>{f}</span>
+          ))}
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+        {bots.map((b) => (
+          <div key={b.n} style={{ ...S.card, padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13 }}>{b.e}</span>
+              <span style={{ fontSize: 10, color: '#EF4444' }}>♥</span>
+            </div>
+            <span style={{ fontSize: 9, fontWeight: 600, ...S.t1, lineHeight: 1.2 }}>{b.n}</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 8, color: '#F59E0B' }}>{'★'.repeat(b.stars)}</span>
+              <span style={{ ...S.badge, color: 'white', padding: '1px 5px', fontSize: 8 }}>Chat</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function VisualMessageActions() {
+  return (
+    <div style={{ ...S.card, padding: '10px 12px', fontSize: 10, height: 164, display: 'flex', flexDirection: 'column', gap: 8, overflow: 'hidden' }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
+        <div style={{ width: 20, height: 20, borderRadius: '50%', background: 'var(--ui-bg-card-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, flexShrink: 0 }}>🤖</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ ...S.card, padding: '7px 9px', ...S.t1, lineHeight: 1.5 }}>
+            Sure! Here&apos;s the answer. The key points are:<br />
+            • Quantum computers use qubits<br />
+            • They can solve complex problems faster
+          </div>
+          <div style={{ display: 'flex', gap: 2, marginTop: 5, flexWrap: 'wrap' }}>
+            {[
+              { icon: '📋', label: 'Copy',  col: 'var(--ui-text-3)' },
+              { icon: '↻',  label: 'Redo',  col: 'var(--ui-text-3)' },
+              { icon: '🔊', label: 'Speak', col: 'var(--ui-text-3)' },
+            ].map((a) => (
+              <span key={a.label} style={{ ...S.card, padding: '2px 6px', color: a.col, fontSize: 9, display: 'flex', alignItems: 'center', gap: 3 }}>
+                {a.icon} {a.label}
+              </span>
+            ))}
+            <span style={{ ...S.card, padding: '2px 7px', color: '#22C55E', fontSize: 11 }}>👍</span>
+            <span style={{ ...S.card, padding: '2px 7px', color: 'var(--ui-text-3)', fontSize: 11 }}>👎</span>
+          </div>
+        </div>
+      </div>
+      <div style={{ ...S.card, padding: '7px 10px', fontSize: 9, ...S.t3, lineHeight: 1.5 }}>
+        <span style={{ ...S.t2, fontWeight: 600 }}>Version arrows ← →</span> appear after you regenerate — browse all AI attempts side by side.
+      </div>
+    </div>
+  );
+}
+
+function VisualNotifications() {
+  return (
+    <div style={{ ...S.card, overflow: 'hidden', fontSize: 10, height: 164 }}>
+      <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--ui-border)', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontSize: 12 }}>🔔</span>
+        <span style={{ fontWeight: 600, ...S.t1 }}>Notifications</span>
+        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#EF4444', marginLeft: 2 }} />
+        <span style={{ marginLeft: 'auto', fontSize: 9, color: '#8B5CF6' }}>Mark all read</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {[
+          { icon: '🎉', title: 'Welcome to AIon!',       body: 'You received 1,000 free credits.',  unread: true  },
+          { icon: '⚠️', title: 'Credits running low',    body: 'You have 50 credits remaining.',    unread: true  },
+          { icon: '✅', title: 'Response saved',          body: 'Your chat history was synced.',     unread: false },
+        ].map((n) => (
+          <div key={n.title} style={{
+            padding: '6px 12px', borderBottom: '1px solid var(--ui-border)',
+            background: n.unread ? 'rgba(139,92,246,0.06)' : 'transparent',
+            display: 'flex', gap: 6, alignItems: 'flex-start',
+          }}>
+            <span style={{ fontSize: 11, marginTop: 1 }}>{n.icon}</span>
+            <div>
+              <p style={{ ...S.t1, fontWeight: n.unread ? 600 : 400 }}>{n.title}</p>
+              <p style={{ ...S.t3, fontSize: 9, marginTop: 1 }}>{n.body}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function VisualSettings() {
+  return (
+    <div style={{ ...S.card, overflow: 'hidden', fontSize: 10, height: 164, display: 'flex' }}>
+      <div style={{ width: 88, borderRight: '1px solid var(--ui-border)', padding: '8px 6px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {[
+          { e: '👤', l: 'Profile',  a: false },
+          { e: '⚙️', l: 'General', a: false },
+          { e: '🔑', l: 'API Keys', a: true  },
+          { e: '🏢', l: 'Teams',   a: false },
+          { e: '📖', l: 'Guide',   a: false },
+          { e: '❓', l: 'Help',    a: false },
+        ].map((t) => (
+          <div key={t.l} style={{
+            display: 'flex', alignItems: 'center', gap: 5, padding: '4px 6px', borderRadius: 6,
+            background: t.a ? 'var(--ui-bg-card-hover)' : 'transparent',
+            color: t.a ? 'var(--ui-text-1)' : 'var(--ui-text-3)',
+            fontWeight: t.a ? 600 : 400,
+          }}>
+            <span style={{ fontSize: 9 }}>{t.e}</span>
+            <span>{t.l}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ flex: 1, padding: '10px 10px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+        <span style={{ fontWeight: 600, ...S.t1, fontSize: 11 }}>API Keys</span>
+        <div style={{ display: 'flex', gap: 5 }}>
+          <div style={{ ...S.input, flex: 1, padding: '4px 7px', ...S.t3 }}>Key name…</div>
+          <div style={{ ...S.badge, padding: '4px 8px', color: 'white', fontSize: 9, whiteSpace: 'nowrap' }}>Generate</div>
+        </div>
+        <div style={{ ...S.card, padding: '5px 8px', display: 'flex', alignItems: 'center', gap: 5 }}>
+          <span style={{ fontSize: 11 }}>🔑</span>
+          <div>
+            <p style={S.t1}>My API Key</p>
+            <p style={{ ...S.t3, fontSize: 9, fontFamily: 'monospace' }}>aion_3f8a…</p>
+          </div>
+          <span style={{ marginLeft: 'auto', fontSize: 9, ...S.t3 }}>🗑</span>
+        </div>
+        <div style={{ ...S.t3, fontSize: 9, lineHeight: 1.4 }}>
+          Use these keys in your own code to call the AIon API.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Tutorial topics data ─────────────────────────────────────────────────────
+const TUTORIAL_TOPICS = [
+  {
+    id: 'chat',
+    emoji: '💬',
+    title: 'Sending a Message',
+    text: 'Click New chat in the sidebar to start a fresh conversation. Pick a model from the toolbar — click the model name to switch. Type in the input box and press Enter to send, or Shift Enter for a new line. You can also drag and drop files, or click the paperclip icon to attach documents and images. If you want to stop a response mid-way, press the red stop button.',
+    Visual: VisualChat,
+  },
+  {
+    id: 'cats',
+    emoji: '🗂️',
+    title: 'AI Category Types',
+    text: 'AIon supports six types of AI. Text is for general chat. Image generates pictures from your description — just type something like "generate an image of a sunset". Audio creates music in styles like Classical, Jazz, or Pop. Speech converts your words into spoken MP3 audio in different languages. Document helps write formatted documents, spreadsheets, and presentations. Study creates interactive exams, flashcards, and diagrams like flowcharts and mind maps.',
+    Visual: VisualCategories,
+  },
+  {
+    id: 'credits',
+    emoji: '🪙',
+    title: 'Credits & Usage',
+    text: 'You start with 1,000 free credits when you sign up. Every AI message costs 1 credit. Your balance is shown at the bottom of the sidebar next to the coin icon. When your balance drops to 50, a warning appears and you receive a notification. You can track your total usage in the credits history. The balance refreshes automatically after each message you send.',
+    Visual: VisualCredits,
+  },
+  {
+    id: 'bots',
+    emoji: '🤖',
+    title: 'Bot Marketplace',
+    text: 'Click the store icon at the top of the sidebar to open the Bot Marketplace. Browse all available AI bots and filter by category or search by name. Click the heart icon to add a bot to your favorites — your favorites appear first. Click the star icon to read reviews or leave your own rating from 1 to 5 stars. Click Chat to immediately start talking to that bot. You can also report a bot using the flag icon if you find it inappropriate.',
+    Visual: VisualMarketplace,
+  },
+  {
+    id: 'actions',
+    emoji: '🛠️',
+    title: 'Message Actions',
+    text: 'Under every AI response you will find action buttons. Copy saves the plain text to your clipboard. Speak reads the response aloud using your device voice — click again to stop. Thumbs up rates a response as good; thumbs down marks it as unhelpful. Your feedback is saved and helps improve future responses. Redo regenerates a completely new answer to the same question. After regenerating, use the left and right arrows to browse all versions side by side.',
+    Visual: VisualMessageActions,
+  },
+  {
+    id: 'notifs',
+    emoji: '🔔',
+    title: 'Notifications',
+    text: 'The bell icon at the top of the sidebar shows your notifications. A red dot appears when you have unread messages. Click the bell to open the panel and read them. You will receive a welcome notification when you first sign up. When your credits fall to 50, a low-credits alert will appear here automatically. Click Mark all read to clear the badge. Notifications also appear after important account events.',
+    Visual: VisualNotifications,
+  },
+  {
+    id: 'settings',
+    emoji: '⚙️',
+    title: 'Settings & Developer Tools',
+    text: 'Open Settings from the gear icon at the bottom of the sidebar. Profile lets you change your display name, username, and avatar photo. General controls the dark or light theme and the accent color throughout the app. API Keys lets you generate secret keys to access AIon from your own code or applications — copy the key immediately after creating it because it is only shown once. Teams lets you create a shared workspace and invite colleagues by email. They will appear as members once they accept.',
+    Visual: VisualSettings,
+  },
+] as const;
+
 // ─── Main settings modal ──────────────────────────────────────────────────────
 export function SettingsModal({ onClose }: Props) {
   const { data: session } = useSession();
@@ -274,6 +568,10 @@ export function SettingsModal({ onClose }: Props) {
   // General
   const [accentColor, setAccentColor] = useState('#8B5CF6');
   const [customColor, setCustomColor] = useState('#8B5CF6');
+
+  // Tutorial
+  const [tutorialStep, setTutorialStep] = useState(0);
+  const [isSpeaking, setIsSpeaking] = useState(false);
 
   // API Keys
   interface ApiKey { id: string; name: string | null; keyPrefix: string; isActive: boolean; createdAt: string; lastUsedAt: string | null; }
@@ -306,6 +604,12 @@ export function SettingsModal({ onClose }: Props) {
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [onClose, dialog]);
+
+  // Stop speech when switching tabs
+  useEffect(() => {
+    window.speechSynthesis?.cancel();
+    setIsSpeaking(false);
+  }, [tab]);
 
   const loadKeys = async () => {
     setKeysLoading(true);
@@ -417,12 +721,27 @@ export function SettingsModal({ onClose }: Props) {
   const initials = (displayName || session?.user?.name || '?')[0]?.toUpperCase();
 
   const TABS: { id: Tab; icon: React.ElementType; label: string }[] = [
-    { id: 'profile', icon: User,       label: 'Profile' },
-    { id: 'general', icon: Settings,   label: 'General' },
-    { id: 'keys',    icon: Key,        label: 'API Keys' },
-    { id: 'orgs',    icon: Building2,  label: 'Teams' },
-    { id: 'help',    icon: HelpCircle, label: 'Help' },
+    { id: 'profile',  icon: User,       label: 'Profile'  },
+    { id: 'general',  icon: Settings,   label: 'General'  },
+    { id: 'keys',     icon: Key,        label: 'API Keys' },
+    { id: 'orgs',     icon: Building2,  label: 'Teams'    },
+    { id: 'tutorial', icon: BookOpen,   label: 'Guide'    },
+    { id: 'help',     icon: HelpCircle, label: 'Help'     },
   ];
+
+  const speakTutorial = (text: string) => {
+    if (isSpeaking) {
+      window.speechSynthesis?.cancel();
+      setIsSpeaking(false);
+      return;
+    }
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 0.88;
+    u.onend = () => setIsSpeaking(false);
+    u.onerror = () => setIsSpeaking(false);
+    window.speechSynthesis?.speak(u);
+    setIsSpeaking(true);
+  };
 
   return (
     <>
@@ -783,6 +1102,121 @@ export function SettingsModal({ onClose }: Props) {
                   )}
                 </div>
               )}
+
+              {/* ── TUTORIAL ── */}
+              {tab === 'tutorial' && (() => {
+                const topic = TUTORIAL_TOPICS[tutorialStep];
+                const Visual = topic.Visual;
+                return (
+                  <div className="flex flex-col h-full" style={{ gap: 0 }}>
+                    {/* Topic pills */}
+                    <div className="flex flex-wrap gap-1.5 mb-4">
+                      {TUTORIAL_TOPICS.map((t, i) => (
+                        <button
+                          key={t.id}
+                          onClick={() => { setTutorialStep(i); window.speechSynthesis?.cancel(); setIsSpeaking(false); }}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] transition-colors"
+                          style={{
+                            background: tutorialStep === i ? 'var(--ui-bg-card-hover)' : 'var(--ui-bg-card)',
+                            border: `1px solid ${tutorialStep === i ? 'var(--ui-input-border)' : 'var(--ui-border)'}`,
+                            color: tutorialStep === i ? 'var(--ui-text-1)' : 'var(--ui-text-3)',
+                            fontWeight: tutorialStep === i ? 600 : 400,
+                          }}
+                        >
+                          <span>{t.emoji}</span>
+                          <span className="hidden sm:inline">{t.title}</span>
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Visual illustration */}
+                    <Visual />
+
+                    {/* Text + navigation */}
+                    <div className="mt-4 flex flex-col gap-3" style={{ flex: 1 }}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold mb-1" style={{ color: 'var(--ui-text-3)' }}>
+                            Step {tutorialStep + 1} of {TUTORIAL_TOPICS.length}
+                          </p>
+                          <h4 className="text-sm font-bold" style={{ color: 'var(--ui-text-1)' }}>
+                            {topic.emoji} {topic.title}
+                          </h4>
+                        </div>
+                        {/* Speak button */}
+                        <button
+                          onClick={() => speakTutorial(topic.text)}
+                          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs transition-colors"
+                          style={{
+                            background: isSpeaking ? 'rgba(139,92,246,0.15)' : 'var(--ui-bg-card)',
+                            border: `1px solid ${isSpeaking ? 'rgba(139,92,246,0.4)' : 'var(--ui-border)'}`,
+                            color: isSpeaking ? '#8B5CF6' : 'var(--ui-text-2)',
+                          }}
+                          title={isSpeaking ? 'Stop reading' : 'Read aloud'}
+                        >
+                          {isSpeaking ? <VolumeX size={12} /> : <Volume2 size={12} />}
+                          {isSpeaking ? 'Stop' : 'Read aloud'}
+                        </button>
+                      </div>
+
+                      <p className="text-xs leading-relaxed" style={{ color: 'var(--ui-text-2)' }}>
+                        {topic.text}
+                      </p>
+
+                      {/* Prev / Next */}
+                      <div className="flex items-center justify-between pt-2 border-t" style={{ borderColor: 'var(--ui-border)' }}>
+                        <button
+                          onClick={() => { setTutorialStep((s) => Math.max(0, s - 1)); window.speechSynthesis?.cancel(); setIsSpeaking(false); }}
+                          disabled={tutorialStep === 0}
+                          className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm transition-colors disabled:opacity-30"
+                          style={{ background: 'var(--ui-bg-card)', border: '1px solid var(--ui-border)', color: 'var(--ui-text-2)' }}
+                          onMouseEnter={(e) => { if (tutorialStep > 0) e.currentTarget.style.background = 'var(--ui-bg-card-hover)'; }}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
+                        >
+                          <ChevronLeft size={14} /> Previous
+                        </button>
+
+                        <div className="flex gap-1">
+                          {TUTORIAL_TOPICS.map((_, i) => (
+                            <button
+                              key={i}
+                              onClick={() => { setTutorialStep(i); window.speechSynthesis?.cancel(); setIsSpeaking(false); }}
+                              className="rounded-full transition-all"
+                              style={{
+                                width: tutorialStep === i ? 16 : 6,
+                                height: 6,
+                                background: tutorialStep === i ? '#8B5CF6' : 'var(--ui-border)',
+                              }}
+                            />
+                          ))}
+                        </div>
+
+                        <button
+                          onClick={() => {
+                            if (tutorialStep < TUTORIAL_TOPICS.length - 1) {
+                              setTutorialStep((s) => s + 1);
+                              window.speechSynthesis?.cancel();
+                              setIsSpeaking(false);
+                            } else {
+                              setTab('profile');
+                            }
+                          }}
+                          className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium text-white transition-opacity"
+                          style={{ background: 'linear-gradient(135deg,#8B5CF6,#3B82F6)' }}
+                          onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.85')}
+                          onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+                        >
+                          {tutorialStep < TUTORIAL_TOPICS.length - 1 ? (
+                            <><span>Next</span><ChevronRight size={14} /></>
+                          ) : (
+                            <span>Done</span>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* ── HELP ── */}
               {tab === 'help' && (
