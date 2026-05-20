@@ -25,6 +25,8 @@ interface Props {
   category: Category;
   defaultModelId: string;
   onConversationUpdate: (conv: Conversation) => void;
+  botSlug?: string;
+  botHeader?: { name: string; description?: string; avatarUrl?: string | null };
 }
 
 function copyToClipboard(text: string) {
@@ -45,7 +47,7 @@ function fallbackCopy(text: string) {
   document.body.removeChild(el);
 }
 
-export function ChatWindow({ conversation, category, defaultModelId, onConversationUpdate }: Props) {
+export function ChatWindow({ conversation, category, defaultModelId, onConversationUpdate, botSlug, botHeader }: Props) {
   useSession();
   const accentHex = useAccent();
   const catInfo = useMemo(() => getCategoryInfo(category), [category]);
@@ -304,8 +306,12 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
 
       const MUSIC_RE = /\b(generat|creat|compos|make|produc|play).{0,30}(music|song|melody|tune|jazz|classical|pop|ambient|folk|beat|track|audio)\b|\b(music|song|melody|tune|jazz|classical|ambient|folk)\b/i;
       const SPEECH_RE = /\b(speak|say|read\s+aloud|text.to.speech|tts|convert.{0,20}(to\s+)?(speech|audio|voice|mp3)|voice\s+over|narrat)\b/i;
+      const VIDEO_VERB_RE = /^(generate|create|make|produce|render|animate)\b/i;
+      const VIDEO_NOUN_RE = /\b(video|clip|animation|movie|film|reel|timelapse|motion|animated)\b/i;
       const isTTSRequest = selectedModelInfo?.isTTS || SPEECH_RE.test(content.trim());
       const isMusicGenRequest = selectedModelInfo?.isMusicGen || (category === 'audio' && MUSIC_RE.test(content.trim()) && !isTTSRequest);
+      const isVideoGenRequest = (selectedModelInfo?.isVideoGen ?? false) ||
+        (category === 'video' && VIDEO_VERB_RE.test(trimmed) && VIDEO_NOUN_RE.test(trimmed));
 
       if (isTTSRequest) {
         try {
@@ -401,6 +407,35 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
         return;
       }
 
+      if (isVideoGenRequest) {
+        try {
+          const res = await fetch('/api/generate/video', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: content.trim(), model: modelId }),
+            signal: abortRef.current.signal,
+          });
+          const data = await res.json() as { url?: string; error?: string };
+          if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+          const patch: Partial<Message> = {
+            content: `🎬 *"${content.trim().slice(0, 60)}${content.trim().length > 60 ? '…' : ''}"*`,
+            mediaUrl: data.url,
+            mediaType: 'video',
+          };
+          updateAssistant(patch);
+          persistConversation(
+            withAssistant.map((m) => (m.id === assistantId ? { ...m, ...patch } : m)),
+            modelId,
+          );
+        } catch (err: unknown) {
+          if (err instanceof Error && err.name !== 'AbortError') showError(err.message);
+        } finally {
+          setIsThinking(false);
+          setIsStreaming(false);
+        }
+        return;
+      }
+
       try {
         const res = await fetch('/api/chat', {
           method: 'POST',
@@ -410,6 +445,7 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
             category,
             messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
             attachments: pendingAttachments,
+            botSlug,
           }),
           signal: abortRef.current.signal,
         });
@@ -520,6 +556,7 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
     const isImageRegen = origMediaType === 'image' || (getModelInfo(category, modelId)?.isImageGen ?? false);
     const isAudioRegen = origMediaType === 'audio';
     const isAbcRegen = origMediaType === 'abc';
+    const isVideoRegen = origMediaType === 'video' || (getModelInfo(category, modelId)?.isVideoGen ?? false);
 
     if (isAudioRegen || isAbcRegen) {
       const userPrompt = base[base.length - 1].content;
@@ -551,6 +588,39 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
           update({ content: origContent, mediaUrl: origMediaUrl, mediaType: origMediaType });
         } else {
           update({ content: `⚠️ ${err instanceof Error ? err.message : 'Audio generation failed'}` });
+        }
+      } finally {
+        setIsThinking(false);
+        setIsStreaming(false);
+      }
+      return;
+    }
+
+    if (isVideoRegen) {
+      const userPrompt = base[base.length - 1].content;
+      try {
+        const res = await fetch('/api/generate/video', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: userPrompt, model: modelId }),
+          signal: abortRef.current.signal,
+        });
+        const data = await res.json() as { url?: string; error?: string };
+        if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+        const label = userPrompt.slice(0, 60) + (userPrompt.length > 60 ? '…' : '');
+        const newContent = `🎬 *"${label}"*`;
+        update({ content: newContent, mediaUrl: data.url, mediaType: 'video' });
+        const newVersions = [...allVersions, newContent];
+        setMsgVersions(prev => new Map(prev).set(msgId, { versions: newVersions, idx: newVersions.length - 1 }));
+        persistConversation(
+          messages.map(m => m.id === msgId ? { ...m, content: newContent, mediaUrl: data.url, mediaType: 'video' as const } : m),
+          modelId,
+        );
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          update({ content: origContent, mediaUrl: origMediaUrl, mediaType: origMediaType });
+        } else {
+          update({ content: `⚠️ ${err instanceof Error ? err.message : 'Video generation failed'}` });
         }
       } finally {
         setIsThinking(false);
@@ -603,6 +673,7 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
         body: JSON.stringify({
           modelId, category,
           messages: base.map(m => ({ role: m.role, content: m.content })),
+          botSlug,
         }),
         signal: abortRef.current.signal,
       });
@@ -750,6 +821,27 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
       )}
 
       {showDocs && <DocumentPanel onClose={() => setShowDocs(false)} onDocsChange={setDocCount} />}
+
+      {botHeader && (
+        <div className="shrink-0 flex items-center gap-3 px-5 py-3 border-b"
+          style={{ background: 'var(--ui-bg-sidebar)', borderColor: 'var(--ui-border)' }}>
+          {botHeader.avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={botHeader.avatarUrl} alt="" className="w-8 h-8 rounded-full object-cover" />
+          ) : (
+            <div className="w-8 h-8 rounded-full flex items-center justify-center text-base shrink-0"
+              style={{ background: theme.imageActiveBg }}>
+              🤖
+            </div>
+          )}
+          <div className="min-w-0">
+            <p className="text-sm font-semibold truncate" style={{ color: 'var(--ui-text-1)' }}>{botHeader.name}</p>
+            {botHeader.description && (
+              <p className="text-xs truncate" style={{ color: 'var(--ui-text-3)' }}>{botHeader.description}</p>
+            )}
+          </div>
+        </div>
+      )}
 
       <div ref={scrollAreaRef} onScroll={handleScrollArea} className="flex-1 overflow-y-auto px-4 py-6">
         {isEmpty ? (
@@ -1079,7 +1171,7 @@ function EmptyState({ catInfo, theme, onSend }: { catInfo: ReturnType<typeof get
     image:         ['Generate an image of a futuristic city at sunset', 'Create a portrait of a cyberpunk samurai', 'Draw a calm zen garden at dusk'],
     embeddings:    ['Compare the semantic similarity of these sentences', 'Cluster these topics by meaning', 'Find the most relevant document for my query'],
     audio:         ['Transcribe this audio description', 'Explain audio compression formats', 'How does noise cancellation work?'],
-    video:         ['Describe what happens in this scene', 'Summarize a video plot', 'Explain video encoding formats'],
+    video:         ['Generate a video of ocean waves at sunset', 'Create an animated clip of a cyberpunk city', 'Make a timelapse video of a blooming flower'],
     rerank:        ['Rank these documents by relevance to my query', 'Which result is most useful for my search?', 'Sort these answers by quality'],
     speech:        ['Convert this text to speech script', 'Write a podcast intro script', 'Create a voiceover for a product demo'],
     transcription: ['Transcribe this meeting notes', 'Convert spoken words to text format', 'Create a subtitle script'],
@@ -1171,6 +1263,9 @@ const MessageBubble = memo(function MessageBubble({ message, modelId, theme, onR
         )}
         {message.mediaType === 'abc' && message.mediaUrl && (
           <ABCPlayer notation={message.mediaUrl} theme={theme} />
+        )}
+        {message.mediaType === 'video' && message.mediaUrl && (
+          <VideoPlayer url={message.mediaUrl} theme={theme} />
         )}
         <MessageActions
           content={message.content}
@@ -1605,6 +1700,44 @@ function AudioPlayer({ url, theme }: { url: string; theme: ProviderTheme }) {
           ↓ Download
         </a>
       </div>
+    </div>
+  );
+}
+
+function VideoPlayer({ url, theme }: { url: string; theme: ProviderTheme }) {
+  const [status, setStatus] = useState<'loading' | 'done' | 'error'>('loading');
+  return (
+    <div className="mt-2 rounded-xl overflow-hidden border" style={{ borderColor: 'var(--ui-border)', background: 'var(--ui-bg-card)' }}>
+      {status === 'loading' && (
+        <div className="flex items-center justify-center gap-2 py-8" style={{ color: 'var(--ui-text-3)' }}>
+          <Loader2 size={18} className="animate-spin" />
+          <span className="text-sm">Generating video…</span>
+        </div>
+      )}
+      {status === 'error' && (
+        <div className="p-4 text-sm text-red-400">
+          Video failed to load.{' '}
+          <a href={url} target="_blank" rel="noopener noreferrer" className="underline">Open URL</a>
+        </div>
+      )}
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+      <video
+        controls
+        playsInline
+        className={`w-full max-w-lg rounded-xl ${status !== 'done' ? 'hidden' : ''}`}
+        onLoadedData={() => setStatus('done')}
+        onError={() => setStatus('error')}
+      >
+        <source src={url} type="video/mp4" />
+      </video>
+      {status === 'done' && (
+        <div className="flex justify-end px-3 py-1">
+          <a href={url} download="generated-video.mp4"
+            className="text-xs hover:underline" style={{ color: theme.primaryColor }}>
+            ↓ Download
+          </a>
+        </div>
+      )}
     </div>
   );
 }

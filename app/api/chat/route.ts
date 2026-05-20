@@ -39,10 +39,20 @@ export async function POST(req: Request) {
       },
     });
 
-    const { messages, modelId, provider = 'gemini', category, attachments = [] } = await req.json();
+    const { messages, modelId, provider = 'gemini', category, attachments = [], botSlug } = await req.json();
 
     // Ensure user exists in DB (handles stale JWTs / pre-migration sessions)
     const dbUserId = await ensureUserInDb(session);
+
+    // If a botSlug is provided, look up its system prompt from DB
+    let botSystemPrompt: string | null = null;
+    if (botSlug) {
+      const { rows: botRows } = await db.query<{ system_prompt: string }>(
+        `SELECT system_prompt FROM bots WHERE slug = $1 AND is_public = TRUE AND is_active = TRUE`,
+        [botSlug],
+      );
+      if (botRows[0]?.system_prompt) botSystemPrompt = botRows[0].system_prompt;
+    }
 
     // Deduct 1 credit; auto-init at 1000 for new users
     await db.query(
@@ -103,7 +113,8 @@ export async function POST(req: Request) {
 
     // ── New-style request: modelId is a full OpenRouter ID (contains '/')
     if (modelId && !LEGACY_TIERS.has(modelId)) {
-      const systemInstruction = `${SYSTEM_PROMPT}\n\nCurrent date/time: ${now} (ICT, Bangkok).${ragSection}`;
+      const basePrompt = botSystemPrompt ?? SYSTEM_PROMPT;
+      const systemInstruction = `${basePrompt}\n\nCurrent date/time: ${now} (ICT, Bangkok).${ragSection}`;
 
       const stream = new ReadableStream({
         async start(controller) {

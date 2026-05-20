@@ -12,6 +12,7 @@ export interface AIModel {
   isImageGen?: boolean;  // routes to /api/generate/image
   isTTS?: boolean;       // routes to /api/generate/speech (OpenAI TTS voice)
   isMusicGen?: boolean;  // routes to /api/generate/audio (HuggingFace MusicGen)
+  isVideoGen?: boolean;  // routes to /api/generate/video (Pollinations video)
 }
 
 export interface CategoryInfo {
@@ -76,11 +77,13 @@ export const categories: CategoryInfo[] = [
     emoji: '🎬',
     color: '#10B981',
     models: [
-      { id: 'openai/gpt-4o',                        name: 'GPT-4o',            description: 'Visual analysis',      icon: '🟢' },
-      { id: 'anthropic/claude-3.5-sonnet',           name: 'Claude 3.5 Sonnet', description: 'Scene description',    icon: '🟣' },
-      { id: 'google/gemini-2.0-flash-001',           name: 'Gemini 2.0 Flash',  description: 'Video understanding',  icon: '✨' },
-      { id: 'deepseek/deepseek-chat',                name: 'DeepSeek V3',       description: 'Video tasks',          icon: '🔵' },
-      { id: 'meta-llama/llama-3.3-70b-instruct',    name: 'Llama 3.3 70B',    description: 'Open & capable',       icon: '🦙' },
+      // Video generation
+      { id: 'video-turbo',                           name: 'Video Gen',         description: 'Generate AI video clips', icon: '🎬', isVideoGen: true },
+      { id: 'video-cinematic',                       name: 'Cinematic',         description: 'Cinematic quality video', icon: '🎥', isVideoGen: true },
+      { id: 'video-animation',                       name: 'Animation',         description: 'Animated style video',    icon: '✨', isVideoGen: true },
+      // Video analysis (text models)
+      { id: 'openai/gpt-4o',                        name: 'GPT-4o Vision',     description: 'Analyze & describe video', icon: '🟢' },
+      { id: 'google/gemini-2.0-flash-001',           name: 'Gemini Vision',     description: 'Video understanding',     icon: '✨' },
     ],
   },
   {
