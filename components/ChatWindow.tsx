@@ -910,6 +910,19 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
 
       <div className="px-4 pb-4 shrink-0">
         <div className="max-w-3xl mx-auto space-y-2">
+          {/* Stop generating — shown when AI is working */}
+          {isStreaming && (
+            <div className="flex justify-center">
+              <button
+                onClick={stop}
+                className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-85 active:scale-95"
+                style={{ background: '#EF4444' }}
+              >
+                <StopCircle size={15} />
+                Stop generating
+              </button>
+            </div>
+          )}
           <div className="flex items-center gap-2 flex-wrap">
             {category === 'document' ? (
               /* Document type pills */
@@ -1092,23 +1105,16 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
               <Mic size={15} />
             </button>
 
-            {isStreaming ? (
-              <button onClick={stop}
-                className="shrink-0 w-8 h-8 flex items-center justify-center rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-colors mb-0.5">
-                <StopCircle size={16} />
-              </button>
-            ) : (
-              <button
-                onClick={() => sendMessage(input)}
-                disabled={!input.trim() && attachments.length === 0}
-                className={`shrink-0 w-8 h-8 flex items-center justify-center rounded-xl disabled:opacity-30 disabled:cursor-not-allowed text-white mb-0.5${theme.isRainbow ? ' rainbow-bg' : ' transition-colors'}`}
-                style={theme.isRainbow ? {} : { background: theme.primaryColor }}
-                onMouseEnter={(e) => { if (!theme.isRainbow) e.currentTarget.style.background = theme.primaryHover; }}
-                onMouseLeave={(e) => { if (!theme.isRainbow) e.currentTarget.style.background = theme.primaryColor; }}
-              >
-                <Send size={14} />
-              </button>
-            )}
+            <button
+              onClick={() => sendMessage(input)}
+              disabled={isStreaming || (!input.trim() && attachments.length === 0)}
+              className={`shrink-0 w-8 h-8 flex items-center justify-center rounded-xl disabled:opacity-30 disabled:cursor-not-allowed text-white mb-0.5${theme.isRainbow ? ' rainbow-bg' : ' transition-colors'}`}
+              style={theme.isRainbow ? {} : { background: theme.primaryColor }}
+              onMouseEnter={(e) => { if (!theme.isRainbow && !isStreaming) e.currentTarget.style.background = theme.primaryHover; }}
+              onMouseLeave={(e) => { if (!theme.isRainbow) e.currentTarget.style.background = theme.primaryColor; }}
+            >
+              <Send size={14} />
+            </button>
           </div>
           <p className="text-center text-[11px]" style={{ color: 'var(--ui-text-3)' }}>
             Enter to send · Shift+Enter for new line · Drop files to upload
