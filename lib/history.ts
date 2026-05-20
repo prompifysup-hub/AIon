@@ -22,11 +22,15 @@ export async function getHistory(): Promise<Conversation[]> {
 }
 
 export async function saveConversation(conv: Conversation): Promise<void> {
-  await fetch('/api/history', {
+  const res = await fetch('/api/history', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(conv),
   });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`[history] save failed ${res.status}: ${body}`);
+  }
 }
 
 export async function deleteConversation(id: string): Promise<void> {

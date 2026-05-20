@@ -41,10 +41,9 @@ export function ChatSidebar({ activeId, userId, onSelect, onNew }: Props) {
   }, [session]);
 
   const refresh = useCallback(async () => {
-    if (!userId) return;
     const convs = await getHistory();
     setAllConvs(convs);
-  }, [userId]);
+  }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
 

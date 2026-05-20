@@ -4,13 +4,14 @@ import { authOptions } from '@/lib/auth';
 import { db, ensureSchema } from '@/lib/db';
 import type { Conversation } from '@/lib/history';
 
+async function getUserId(): Promise<string> {
+  const session = await getServerSession(authOptions);
+  return session?.user?.email ?? 'local';
+}
+
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
+    const userId = await getUserId();
     await ensureSchema();
 
     const { rows } = await db.query<{
@@ -20,7 +21,7 @@ export async function GET() {
     }>(
       `SELECT id, title, model_id, provider, messages, starred, created_at, updated_at
        FROM conversations WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 100`,
-      [session.user.email],
+      [userId],
     );
 
     return NextResponse.json(rows.map((r) => ({
@@ -41,11 +42,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
+    const userId = await getUserId();
     await ensureSchema();
 
     const conv: Conversation = await req.json();
@@ -62,7 +59,7 @@ export async function POST(req: Request) {
          starred    = EXCLUDED.starred,
          updated_at = EXCLUDED.updated_at`,
       [
-        conv.id, session.user.email, conv.title, conv.modelId, conv.provider,
+        conv.id, userId, conv.title, conv.modelId, conv.provider,
         JSON.stringify(conv.messages), conv.starred ?? false,
         conv.createdAt, conv.updatedAt,
       ],
@@ -77,16 +74,12 @@ export async function POST(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
+    const userId = await getUserId();
     const { id } = await req.json();
 
     await db.query(
       `DELETE FROM conversations WHERE id = $1 AND user_id = $2`,
-      [id, session.user.email],
+      [id, userId],
     );
 
     return NextResponse.json({ ok: true });
@@ -98,18 +91,14 @@ export async function DELETE(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
+    const userId = await getUserId();
     await ensureSchema();
 
     const { id } = await req.json();
 
     await db.query(
       `UPDATE conversations SET starred = NOT starred WHERE id = $1 AND user_id = $2`,
-      [id, session.user.email],
+      [id, userId],
     );
 
     return NextResponse.json({ ok: true });
