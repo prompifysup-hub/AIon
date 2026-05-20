@@ -2,12 +2,22 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
-import { Sparkles, Plus, Trash2, MessageSquare, Search, Star, Settings } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Sparkles, Plus, Trash2, MessageSquare, Search, Star, Settings, Bell, Coins, Store } from 'lucide-react';
 import {
   getHistory, deleteConversation, toggleStarConversation,
   groupByDate, Conversation,
 } from '@/lib/history';
 import { SettingsModal } from './SettingsModal';
+
+interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  body: string | null;
+  isRead: boolean;
+  createdAt: string;
+}
 
 interface Props {
   activeId?: string;
@@ -30,10 +40,14 @@ function loadProfile(fallbackName: string): ProfileData {
 
 export function ChatSidebar({ activeId, userId, onSelect, onNew }: Props) {
   const { data: session } = useSession();
+  const router = useRouter();
   const [allConvs, setAllConvs] = useState<Conversation[]>([]);
   const [search, setSearch] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [profile, setProfile] = useState<ProfileData>({ displayName: '', avatar: null });
+  const [credits, setCredits] = useState<number | null>(null);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [showNotifs, setShowNotifs] = useState(false);
 
   const refreshProfile = useCallback(() => {
     const fallback = session?.user?.name || session?.user?.email || 'User';
@@ -45,7 +59,38 @@ export function ChatSidebar({ activeId, userId, onSelect, onNew }: Props) {
     setAllConvs(convs);
   }, []);
 
+  const refreshCredits = useCallback(async () => {
+    if (!session?.user) return;
+    try {
+      const res = await fetch('/api/credits');
+      const data = await res.json();
+      if (data.loggedIn) setCredits(data.balance);
+    } catch { /* ignore */ }
+  }, [session]);
+
+  const loadNotifications = useCallback(async () => {
+    if (!session?.user) return;
+    try {
+      const res = await fetch('/api/notifications');
+      const data = await res.json();
+      if (Array.isArray(data)) setNotifications(data);
+    } catch { /* ignore */ }
+  }, [session]);
+
+  const markAllRead = async () => {
+    await fetch('/api/notifications', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+  };
+
   useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => { refreshCredits(); }, [refreshCredits]);
+  useEffect(() => { loadNotifications(); }, [loadNotifications]);
+
+  useEffect(() => {
+    const handler = () => { refreshCredits(); };
+    window.addEventListener('aion:credits', handler);
+    return () => window.removeEventListener('aion:credits', handler);
+  }, [refreshCredits]);
 
   useEffect(() => { refreshProfile(); }, [refreshProfile]);
 
@@ -88,13 +133,83 @@ export function ChatSidebar({ activeId, userId, onSelect, onNew }: Props) {
       >
         {/* Logo + New chat */}
         <div className="px-3 py-4 border-b" style={{ borderColor: 'var(--ui-border)' }}>
-          <div className="flex items-center gap-2.5 px-2 mb-3">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shrink-0">
-              <Sparkles size={13} className="text-white" />
+          <div className="flex items-center justify-between px-2 mb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shrink-0">
+                <Sparkles size={13} className="text-white" />
+              </div>
+              <span className="font-semibold tracking-tight text-sm" style={{ color: 'var(--ui-text-1)' }}>
+                AIon
+              </span>
             </div>
-            <span className="font-semibold tracking-tight text-sm" style={{ color: 'var(--ui-text-1)' }}>
-              AIon
-            </span>
+            <div className="flex items-center gap-1">
+              {/* Marketplace */}
+              <button
+                onClick={() => router.push('/bots')}
+                title="Bot Marketplace"
+                className="p-1.5 rounded-lg transition-colors"
+                style={{ color: 'var(--ui-text-3)' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--ui-bg-card)'; e.currentTarget.style.color = 'var(--ui-text-1)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--ui-text-3)'; }}
+              >
+                <Store size={13} />
+              </button>
+              {/* Notifications */}
+              {session && (
+                <div className="relative">
+                  <button
+                    onClick={() => setShowNotifs(!showNotifs)}
+                    title="Notifications"
+                    className="p-1.5 rounded-lg transition-colors relative"
+                    style={{ color: 'var(--ui-text-3)' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--ui-bg-card)'; e.currentTarget.style.color = 'var(--ui-text-1)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--ui-text-3)'; }}
+                  >
+                    <Bell size={13} />
+                    {notifications.some((n) => !n.isRead) && (
+                      <span
+                        className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full"
+                        style={{ background: '#EF4444' }}
+                      />
+                    )}
+                  </button>
+                  {showNotifs && (
+                    <div
+                      className="absolute left-0 top-full mt-1 w-72 rounded-xl overflow-hidden z-50 shadow-xl"
+                      style={{ background: 'var(--ui-bg-sidebar)', border: '1px solid var(--ui-border)' }}
+                    >
+                      <div className="flex items-center justify-between px-3 py-2 border-b" style={{ borderColor: 'var(--ui-border)' }}>
+                        <span className="text-xs font-semibold" style={{ color: 'var(--ui-text-1)' }}>Notifications</span>
+                        {notifications.some((n) => !n.isRead) && (
+                          <button onClick={markAllRead} className="text-[10px]" style={{ color: 'var(--ui-text-3)' }}>
+                            Mark all read
+                          </button>
+                        )}
+                      </div>
+                      <div className="max-h-64 overflow-y-auto">
+                        {notifications.length === 0 ? (
+                          <p className="text-xs text-center py-6" style={{ color: 'var(--ui-text-3)' }}>No notifications</p>
+                        ) : (
+                          notifications.map((n) => (
+                            <div
+                              key={n.id}
+                              className="px-3 py-2.5 border-b"
+                              style={{
+                                borderColor: 'var(--ui-border)',
+                                background: n.isRead ? 'transparent' : 'rgba(139,92,246,0.06)',
+                              }}
+                            >
+                              <p className="text-xs font-medium" style={{ color: 'var(--ui-text-1)' }}>{n.title}</p>
+                              {n.body && <p className="text-[11px] mt-0.5" style={{ color: 'var(--ui-text-3)' }}>{n.body}</p>}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
           <button
             onClick={onNew}
@@ -185,6 +300,17 @@ export function ChatSidebar({ activeId, userId, onSelect, onNew }: Props) {
 
         {/* Bottom: user + settings */}
         <div className="p-3 border-t" style={{ borderColor: 'var(--ui-border)' }}>
+          {session && credits !== null && (
+            <div
+              className="flex items-center gap-1.5 px-2 py-1.5 rounded-xl mb-1 text-xs"
+              style={{ color: credits <= 50 ? '#F59E0B' : 'var(--ui-text-3)' }}
+              title={`${credits} credits remaining`}
+            >
+              <Coins size={12} />
+              <span>{credits.toLocaleString()} credits</span>
+              {credits <= 50 && <span className="text-[10px]">⚠ low</span>}
+            </div>
+          )}
           {session && (
             <div className="flex items-center gap-2 px-2 py-1.5 rounded-xl">
               {/* Avatar */}

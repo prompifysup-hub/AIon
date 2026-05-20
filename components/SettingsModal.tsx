@@ -5,6 +5,7 @@ import { useSession, signOut } from 'next-auth/react';
 import {
   X, User, Settings, HelpCircle, Sun, Moon, Upload,
   Bug, FileText, Shield, Headphones, Send, Loader2,
+  Key, Building2, Plus, Trash2, Copy, Check, Users,
 } from 'lucide-react';
 import { useTheme } from '@/lib/theme';
 import { ACCENT_PRESETS, saveAccent } from '@/lib/accent';
@@ -13,7 +14,7 @@ interface Props {
   onClose: () => void;
 }
 
-type Tab = 'profile' | 'general' | 'help';
+type Tab = 'profile' | 'general' | 'keys' | 'orgs' | 'help';
 type Dialog = null | 'help-center' | 'report-bug' | 'privacy' | 'tos';
 
 // ─── Sub-dialog: contact form ────────────────────────────────────────────────
@@ -274,6 +275,23 @@ export function SettingsModal({ onClose }: Props) {
   const [accentColor, setAccentColor] = useState('#8B5CF6');
   const [customColor, setCustomColor] = useState('#8B5CF6');
 
+  // API Keys
+  interface ApiKey { id: string; name: string | null; keyPrefix: string; isActive: boolean; createdAt: string; lastUsedAt: string | null; }
+  const [apiKeys, setApiKeys] = useState<ApiKey[]>([]);
+  const [newKeyName, setNewKeyName] = useState('');
+  const [newKeyResult, setNewKeyResult] = useState<string | null>(null);
+  const [keyCopied, setKeyCopied] = useState(false);
+  const [keysLoading, setKeysLoading] = useState(false);
+
+  // Organizations
+  interface Org { id: string; name: string; slug: string; memberCount: number; role: string; createdAt: string; }
+  const [orgs, setOrgs] = useState<Org[]>([]);
+  const [newOrgName, setNewOrgName] = useState('');
+  const [orgsLoading, setOrgsLoading] = useState(false);
+  const [inviteOrgId, setInviteOrgId] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteStatus, setInviteStatus] = useState('');
+
   useEffect(() => {
     setDisplayName(localStorage.getItem('aion_display_name') || session?.user?.name || '');
     setUsername(localStorage.getItem('aion_username') || session?.user?.email?.split('@')[0] || '');
@@ -288,6 +306,83 @@ export function SettingsModal({ onClose }: Props) {
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [onClose, dialog]);
+
+  const loadKeys = async () => {
+    setKeysLoading(true);
+    const res = await fetch('/api/keys');
+    const data = await res.json();
+    if (Array.isArray(data)) setApiKeys(data);
+    setKeysLoading(false);
+  };
+
+  const createKey = async () => {
+    const res = await fetch('/api/keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newKeyName || 'My API Key' }),
+    });
+    const data = await res.json();
+    if (data.key) {
+      setNewKeyResult(data.key);
+      setNewKeyName('');
+      loadKeys();
+    }
+  };
+
+  const deleteKey = async (id: string) => {
+    await fetch('/api/keys', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    setApiKeys((prev) => prev.filter((k) => k.id !== id));
+  };
+
+  const loadOrgs = async () => {
+    setOrgsLoading(true);
+    const res = await fetch('/api/orgs');
+    const data = await res.json();
+    if (Array.isArray(data)) setOrgs(data);
+    setOrgsLoading(false);
+  };
+
+  const createOrg = async () => {
+    if (!newOrgName.trim()) return;
+    await fetch('/api/orgs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newOrgName }),
+    });
+    setNewOrgName('');
+    loadOrgs();
+  };
+
+  const deleteOrg = async (id: string) => {
+    await fetch('/api/orgs', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    setOrgs((prev) => prev.filter((o) => o.id !== id));
+  };
+
+  const inviteMember = async () => {
+    if (!inviteOrgId || !inviteEmail) return;
+    const res = await fetch('/api/orgs/members', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orgId: inviteOrgId, email: inviteEmail }),
+    });
+    const data = await res.json();
+    setInviteStatus(data.ok ? 'Invited!' : (data.error ?? 'Error'));
+    if (data.ok) { setInviteEmail(''); setTimeout(() => setInviteStatus(''), 2000); }
+  };
+
+  useEffect(() => {
+    if (tab === 'keys') loadKeys();
+    if (tab === 'orgs') loadOrgs();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -322,9 +417,11 @@ export function SettingsModal({ onClose }: Props) {
   const initials = (displayName || session?.user?.name || '?')[0]?.toUpperCase();
 
   const TABS: { id: Tab; icon: React.ElementType; label: string }[] = [
-    { id: 'profile', icon: User, label: 'Profile' },
-    { id: 'general', icon: Settings, label: 'General' },
-    { id: 'help', icon: HelpCircle, label: 'Help' },
+    { id: 'profile', icon: User,       label: 'Profile' },
+    { id: 'general', icon: Settings,   label: 'General' },
+    { id: 'keys',    icon: Key,        label: 'API Keys' },
+    { id: 'orgs',    icon: Building2,  label: 'Teams' },
+    { id: 'help',    icon: HelpCircle, label: 'Help' },
   ];
 
   return (
@@ -519,6 +616,171 @@ export function SettingsModal({ onClose }: Props) {
                       </span>
                     </p>
                   </div>
+                </div>
+              )}
+
+              {/* ── API KEYS ── */}
+              {tab === 'keys' && (
+                <div className="space-y-5">
+                  <h3 className="text-sm font-semibold" style={{ color: 'var(--ui-text-1)' }}>API Keys</h3>
+                  <p className="text-xs" style={{ color: 'var(--ui-text-3)' }}>
+                    Use API keys to access AIon programmatically. Keep them secret — they grant full account access.
+                  </p>
+
+                  {/* Create new key */}
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newKeyName}
+                      onChange={(e) => setNewKeyName(e.target.value)}
+                      placeholder="Key name (optional)"
+                      className="flex-1 px-3 py-2 rounded-xl text-sm outline-none"
+                      style={{ background: 'var(--ui-input-bg)', border: '1px solid var(--ui-input-border)', color: 'var(--ui-text-1)' }}
+                    />
+                    <button
+                      onClick={createKey}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium text-white shrink-0"
+                      style={{ background: 'linear-gradient(135deg,#8B5CF6,#3B82F6)' }}
+                    >
+                      <Plus size={13} /> Generate
+                    </button>
+                  </div>
+
+                  {/* New key display */}
+                  {newKeyResult && (
+                    <div className="rounded-xl p-3 space-y-2" style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)' }}>
+                      <p className="text-xs font-medium" style={{ color: '#22C55E' }}>Copy your key now — it won&rsquo;t be shown again!</p>
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 text-xs break-all" style={{ color: 'var(--ui-text-1)' }}>{newKeyResult}</code>
+                        <button
+                          onClick={async () => {
+                            await navigator.clipboard.writeText(newKeyResult);
+                            setKeyCopied(true);
+                            setTimeout(() => setKeyCopied(false), 2000);
+                          }}
+                          className="shrink-0 p-1.5 rounded-lg"
+                          style={{ color: keyCopied ? '#22C55E' : 'var(--ui-text-3)' }}
+                        >
+                          {keyCopied ? <Check size={14} /> : <Copy size={14} />}
+                        </button>
+                      </div>
+                      <button onClick={() => setNewKeyResult(null)} className="text-xs" style={{ color: 'var(--ui-text-3)' }}>Dismiss</button>
+                    </div>
+                  )}
+
+                  {/* Existing keys */}
+                  {keysLoading ? (
+                    <div className="flex items-center justify-center py-6">
+                      <Loader2 size={16} className="animate-spin" style={{ color: 'var(--ui-text-3)' }} />
+                    </div>
+                  ) : apiKeys.length === 0 ? (
+                    <p className="text-xs text-center py-4" style={{ color: 'var(--ui-text-3)' }}>No API keys yet</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {apiKeys.map((k) => (
+                        <div key={k.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
+                          style={{ background: 'var(--ui-bg-card)', border: '1px solid var(--ui-border)' }}>
+                          <Key size={13} style={{ color: 'var(--ui-text-3)', flexShrink: 0 }} />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm truncate" style={{ color: 'var(--ui-text-1)' }}>{k.name ?? 'Unnamed Key'}</p>
+                            <p className="text-xs font-mono" style={{ color: 'var(--ui-text-3)' }}>{k.keyPrefix}…</p>
+                          </div>
+                          <p className="text-xs shrink-0" style={{ color: 'var(--ui-text-3)' }}>
+                            {new Date(k.createdAt).toLocaleDateString()}
+                          </p>
+                          <button onClick={() => deleteKey(k.id)} className="shrink-0 p-1 rounded-lg transition-colors"
+                            style={{ color: 'var(--ui-text-3)' }}
+                            onMouseEnter={(e) => (e.currentTarget.style.color = '#f87171')}
+                            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--ui-text-3)')}>
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── ORGANIZATIONS ── */}
+              {tab === 'orgs' && (
+                <div className="space-y-5">
+                  <h3 className="text-sm font-semibold" style={{ color: 'var(--ui-text-1)' }}>Teams</h3>
+
+                  {/* Create new org */}
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newOrgName}
+                      onChange={(e) => setNewOrgName(e.target.value)}
+                      placeholder="Team name"
+                      className="flex-1 px-3 py-2 rounded-xl text-sm outline-none"
+                      style={{ background: 'var(--ui-input-bg)', border: '1px solid var(--ui-input-border)', color: 'var(--ui-text-1)' }}
+                      onKeyDown={(e) => e.key === 'Enter' && createOrg()}
+                    />
+                    <button
+                      onClick={createOrg}
+                      disabled={!newOrgName.trim()}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium text-white disabled:opacity-40 shrink-0"
+                      style={{ background: 'linear-gradient(135deg,#8B5CF6,#3B82F6)' }}
+                    >
+                      <Plus size={13} /> Create
+                    </button>
+                  </div>
+
+                  {/* Team list */}
+                  {orgsLoading ? (
+                    <div className="flex items-center justify-center py-6">
+                      <Loader2 size={16} className="animate-spin" style={{ color: 'var(--ui-text-3)' }} />
+                    </div>
+                  ) : orgs.length === 0 ? (
+                    <p className="text-xs text-center py-4" style={{ color: 'var(--ui-text-3)' }}>No teams yet</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {orgs.map((o) => (
+                        <div key={o.id} className="rounded-xl p-3 space-y-2"
+                          style={{ background: 'var(--ui-bg-card)', border: '1px solid var(--ui-border)' }}>
+                          <div className="flex items-center gap-2">
+                            <Building2 size={14} style={{ color: 'var(--ui-text-3)', flexShrink: 0 }} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate" style={{ color: 'var(--ui-text-1)' }}>{o.name}</p>
+                              <p className="text-xs" style={{ color: 'var(--ui-text-3)' }}>
+                                <Users size={10} className="inline mr-1" />{o.memberCount} member{o.memberCount !== 1 ? 's' : ''} · {o.role}
+                              </p>
+                            </div>
+                            {o.role === 'owner' && (
+                              <button onClick={() => deleteOrg(o.id)} className="p-1 rounded-lg"
+                                style={{ color: 'var(--ui-text-3)' }}
+                                onMouseEnter={(e) => (e.currentTarget.style.color = '#f87171')}
+                                onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--ui-text-3)')}>
+                                <Trash2 size={13} />
+                              </button>
+                            )}
+                          </div>
+                          {/* Invite form for owners/admins */}
+                          {(o.role === 'owner' || o.role === 'admin') && (
+                            <div className="flex gap-2 pt-1 border-t" style={{ borderColor: 'var(--ui-border)' }}>
+                              <input
+                                type="email"
+                                value={inviteOrgId === o.id ? inviteEmail : ''}
+                                onChange={(e) => { setInviteOrgId(o.id); setInviteEmail(e.target.value); }}
+                                placeholder="Invite by email…"
+                                className="flex-1 px-2.5 py-1.5 rounded-lg text-xs outline-none"
+                                style={{ background: 'var(--ui-input-bg)', border: '1px solid var(--ui-input-border)', color: 'var(--ui-text-1)' }}
+                              />
+                              <button
+                                onClick={inviteMember}
+                                disabled={!inviteEmail.trim() || inviteOrgId !== o.id}
+                                className="px-3 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-40"
+                                style={{ background: '#8B5CF6' }}
+                              >
+                                {inviteStatus && inviteOrgId === o.id ? inviteStatus : 'Invite'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 

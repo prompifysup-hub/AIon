@@ -3,6 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import OpenAI from 'openai';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { db } from '@/lib/db';
 import { getModel, providerModelMap, Provider, SYSTEM_PROMPT } from '@/lib/models';
 import { retrieve, getDocs } from '@/lib/rag';
 
@@ -38,6 +39,49 @@ export async function POST(req: Request) {
     });
 
     const { messages, modelId, provider = 'gemini', category, attachments = [] } = await req.json();
+
+    // Deduct 1 credit; auto-init at 1000 for pre-migration users
+    await db.query(
+      `INSERT INTO user_credits (user_id, balance, lifetime_earned)
+       VALUES ($1, 1000, 1000)
+       ON CONFLICT (user_id) DO NOTHING`,
+      [session.user.id],
+    );
+    const creditResult = await db.query<{ balance: string }>(
+      `UPDATE user_credits
+       SET balance = GREATEST(balance - 1, 0),
+           lifetime_spent = lifetime_spent + 1,
+           updated_at = NOW()
+       WHERE user_id = $1 AND balance > 0
+       RETURNING balance`,
+      [session.user.id],
+    );
+    if (creditResult.rows.length === 0) {
+      return NextResponse.json({ error: 'Insufficient credits. Please contact support.' }, { status: 402 });
+    }
+    const newBalance = Number(creditResult.rows[0].balance);
+    await db.query(
+      `INSERT INTO credit_transactions (user_id, amount, balance_after, type, description)
+       VALUES ($1, -1, $2, 'deduction', 'AI message')`,
+      [session.user.id, newBalance],
+    );
+    await db.query(
+      `INSERT INTO daily_usage_stats (user_id, date, messages_sent, credits_used)
+       VALUES ($1, CURRENT_DATE, 1, 1)
+       ON CONFLICT (user_id, date) DO UPDATE SET
+         messages_sent = daily_usage_stats.messages_sent + 1,
+         credits_used  = daily_usage_stats.credits_used  + 1`,
+      [session.user.id],
+    );
+    // Notify when credits are low
+    if (newBalance === 50) {
+      await db.query(
+        `INSERT INTO notifications (user_id, type, title, body)
+         VALUES ($1, 'credits_low', 'Credits running low', 'You have 50 credits remaining.')
+         ON CONFLICT DO NOTHING`,
+        [session.user.id],
+      ).catch(() => {/* ignore duplicate */});
+    }
 
     const now = new Date().toLocaleString('en-US', {
       timeZone: 'Asia/Bangkok', dateStyle: 'full', timeStyle: 'short',

@@ -11,6 +11,7 @@ import {
   Send, StopCircle, Loader2,
   ChevronDown, ChevronLeft, ChevronRight, Paperclip, Download, Mic,
   Copy, Check, Volume2, VolumeX, RotateCcw, X, FileText,
+  ThumbsUp, ThumbsDown, Flag,
 } from 'lucide-react';
 import { ExamBlock, FlashcardBlock, MermaidBlock } from './StudyBlocks';
 import ReactMarkdown from 'react-markdown';
@@ -47,6 +48,7 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
   const [isListening, setIsListening] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [msgVersions, setMsgVersions] = useState<Map<string, { versions: string[]; idx: number }>>(new Map());
+  const [feedbackRatings, setFeedbackRatings] = useState<Map<string, number>>(new Map());
 
   const convIdRef = useRef<string>(conversation?.id ?? crypto.randomUUID());
   const convCreatedAtRef = useRef<string>(conversation?.createdAt ?? new Date().toISOString());
@@ -82,6 +84,7 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
     setIsThinking(false);
     setAttachments([]);
     setMsgVersions(new Map());
+    setFeedbackRatings(new Map());
     window.speechSynthesis?.cancel();
     recognitionRef.current?.stop();
     setIsListening(false);
@@ -212,6 +215,24 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
     },
     [onConversationUpdate, category],
   );
+
+  const handleFeedback = useCallback(async (messageId: string, rating: number) => {
+    setFeedbackRatings((prev) => {
+      const next = new Map(prev);
+      if (rating === 0) { next.delete(messageId); } else { next.set(messageId, rating); }
+      return next;
+    });
+    if (rating === 0) return;
+    fetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        conversationId: convIdRef.current,
+        messageUuid: messageId,
+        rating,
+      }),
+    }).catch(() => {/* ignore */});
+  }, []);
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -728,6 +749,8 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
                 }
                 versionEntry={msg.role === 'assistant' ? msgVersions.get(msg.id) : undefined}
                 onNavigateVersion={(dir) => navigateVersion(msg.id, dir)}
+                onFeedback={msg.role === 'assistant' ? handleFeedback : undefined}
+                currentRating={feedbackRatings.get(msg.id)}
               />
             ))}
             {isThinking && (
@@ -1063,13 +1086,15 @@ function EmptyState({ catInfo, theme, onSend }: { catInfo: ReturnType<typeof get
   );
 }
 
-const MessageBubble = memo(function MessageBubble({ message, modelId, theme, onRegenerate, versionEntry, onNavigateVersion }: {
+const MessageBubble = memo(function MessageBubble({ message, modelId, theme, onRegenerate, versionEntry, onNavigateVersion, onFeedback, currentRating }: {
   message: Message;
   modelId: string;
   theme: ProviderTheme;
   onRegenerate?: () => void;
   versionEntry?: { versions: string[]; idx: number };
   onNavigateVersion?: (dir: -1 | 1) => void;
+  onFeedback?: (messageId: string, rating: number) => void;
+  currentRating?: number;
 }) {
   if (message.role === 'user') {
     return (
@@ -1127,7 +1152,15 @@ const MessageBubble = memo(function MessageBubble({ message, modelId, theme, onR
         {message.mediaType === 'abc' && message.mediaUrl && (
           <ABCPlayer notation={message.mediaUrl} theme={theme} />
         )}
-        <MessageActions content={message.content} theme={theme} onRegenerate={onRegenerate} versionEntry={versionEntry} onNavigateVersion={onNavigateVersion} />
+        <MessageActions
+          content={message.content}
+          theme={theme}
+          onRegenerate={onRegenerate}
+          versionEntry={versionEntry}
+          onNavigateVersion={onNavigateVersion}
+          onFeedback={onFeedback ? (rating) => onFeedback(message.id, rating) : undefined}
+          currentRating={currentRating}
+        />
       </div>
     </div>
   );
@@ -1153,12 +1186,14 @@ function UserCopyButton({ content, theme }: { content: string; theme: ProviderTh
   );
 }
 
-function MessageActions({ content, theme, onRegenerate, versionEntry, onNavigateVersion }: {
+function MessageActions({ content, theme, onRegenerate, versionEntry, onNavigateVersion, onFeedback, currentRating }: {
   content: string;
   theme: ProviderTheme;
   onRegenerate?: () => void;
   versionEntry?: { versions: string[]; idx: number };
   onNavigateVersion?: (dir: -1 | 1) => void;
+  onFeedback?: (rating: number) => void;
+  currentRating?: number;
 }) {
   const [copied, setCopied] = useState(false);
   const [speaking, setSpeaking] = useState(false);
@@ -1282,6 +1317,30 @@ function MessageActions({ content, theme, onRegenerate, versionEntry, onNavigate
           {speaking ? <VolumeX size={12} /> : <Volume2 size={12} />}
           <span>{speaking ? 'Stop' : 'Speak'}</span>
         </button>
+      )}
+      {onFeedback && content && (
+        <>
+          <button
+            onClick={() => onFeedback(currentRating === 5 ? 0 : 5)}
+            className="w-6 h-6 flex items-center justify-center rounded-lg text-xs transition-colors"
+            style={{ color: currentRating === 5 ? '#22C55E' : 'var(--ui-text-3)' }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            title="Good response"
+          >
+            <ThumbsUp size={12} fill={currentRating === 5 ? '#22C55E' : 'none'} />
+          </button>
+          <button
+            onClick={() => onFeedback(currentRating === 1 ? 0 : 1)}
+            className="w-6 h-6 flex items-center justify-center rounded-lg text-xs transition-colors"
+            style={{ color: currentRating === 1 ? '#EF4444' : 'var(--ui-text-3)' }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--ui-bg-card)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            title="Bad response"
+          >
+            <ThumbsDown size={12} fill={currentRating === 1 ? '#EF4444' : 'none'} />
+          </button>
+        </>
       )}
     </div>
   );
