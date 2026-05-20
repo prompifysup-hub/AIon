@@ -20,7 +20,7 @@ export async function GET() {
       created_at: string; updated_at: string;
     }>(
       `SELECT id, title, model_id, provider, messages, starred, created_at, updated_at
-       FROM conversations WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 100`,
+       FROM aion_conversations WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 100`,
       [userId],
     );
 
@@ -48,7 +48,7 @@ export async function POST(req: Request) {
     const conv: Conversation = await req.json();
 
     await db.query(
-      `INSERT INTO conversations
+      `INSERT INTO aion_conversations
          (id, user_id, title, model_id, provider, messages, starred, created_at, updated_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        ON CONFLICT (id) DO UPDATE SET
@@ -78,7 +78,7 @@ export async function DELETE(req: Request) {
     const { id } = await req.json();
 
     await db.query(
-      `DELETE FROM conversations WHERE id = $1 AND user_id = $2`,
+      `DELETE FROM aion_conversations WHERE id = $1 AND user_id = $2`,
       [id, userId],
     );
 
@@ -97,7 +97,7 @@ export async function PATCH(req: Request) {
     const { id } = await req.json();
 
     await db.query(
-      `UPDATE conversations SET starred = NOT starred WHERE id = $1 AND user_id = $2`,
+      `UPDATE aion_conversations SET starred = NOT starred WHERE id = $1 AND user_id = $2`,
       [id, userId],
     );
 

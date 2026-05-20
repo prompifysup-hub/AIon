@@ -20,7 +20,7 @@ let ready = false;
 export async function ensureSchema() {
   if (ready) return;
   await db.query(`
-    CREATE TABLE IF NOT EXISTS conversations (
+    CREATE TABLE IF NOT EXISTS aion_conversations (
       id          TEXT PRIMARY KEY,
       user_id     TEXT NOT NULL,
       title       TEXT NOT NULL,
@@ -31,8 +31,8 @@ export async function ensureSchema() {
       created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
-    CREATE INDEX IF NOT EXISTS conversations_user_updated
-      ON conversations (user_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS aion_conversations_user_updated
+      ON aion_conversations (user_id, updated_at DESC);
   `);
   ready = true;
 }
