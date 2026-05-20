@@ -81,11 +81,11 @@ export const categories: CategoryInfo[] = [
     emoji: '🗣️',
     color: '#EF4444',
     models: [
-      { id: 'alloy',   name: 'Alloy',   description: 'Balanced & natural',   icon: '🗣️', isTTS: true },
-      { id: 'echo',    name: 'Echo',    description: 'Crisp & clear',         icon: '🗣️', isTTS: true },
-      { id: 'fable',   name: 'Fable',   description: 'Warm & expressive',     icon: '🗣️', isTTS: true },
-      { id: 'onyx',    name: 'Onyx',    description: 'Deep & authoritative',  icon: '🗣️', isTTS: true },
-      { id: 'nova',    name: 'Nova',    description: 'Soft & friendly',       icon: '🗣️', isTTS: true },
+      { id: 'en',    name: 'English',    description: 'Standard English',     icon: '🗣️', isTTS: true },
+      { id: 'en-gb', name: 'British',    description: 'British English',       icon: '🗣️', isTTS: true },
+      { id: 'en-au', name: 'Australian', description: 'Australian English',    icon: '🗣️', isTTS: true },
+      { id: 'fr',    name: 'French',     description: 'French voice',          icon: '🗣️', isTTS: true },
+      { id: 'th',    name: 'Thai',       description: 'Thai voice',            icon: '🗣️', isTTS: true },
     ],
   },
   {
