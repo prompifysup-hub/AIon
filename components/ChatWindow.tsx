@@ -415,11 +415,12 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
             body: JSON.stringify({ prompt: content.trim(), model: modelId }),
             signal: abortRef.current.signal,
           });
-          const data = await res.json() as { url?: string; error?: string };
+          const data = await res.json() as { frames?: string[]; error?: string };
           if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+          const label = content.trim().slice(0, 60) + (content.trim().length > 60 ? '…' : '');
           const patch: Partial<Message> = {
-            content: `🎬 *"${content.trim().slice(0, 60)}${content.trim().length > 60 ? '…' : ''}"*`,
-            mediaUrl: data.url,
+            content: `🎬 *"${label}"*`,
+            mediaFrames: data.frames,
             mediaType: 'video',
           };
           updateAssistant(patch);
@@ -544,8 +545,8 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
     const existingEntry = msgVersions.get(msgId);
     const allVersions = existingEntry?.versions ?? [targetMsg.content];
 
-    // Clear message (including image) for regeneration
-    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: '', mediaUrl: undefined } : m));
+    // Clear message (including image/frames) for regeneration
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: '', mediaUrl: undefined, mediaFrames: undefined } : m));
     setIsThinking(true);
     setIsStreaming(true);
     abortRef.current = new AbortController();
@@ -605,20 +606,20 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
           body: JSON.stringify({ prompt: userPrompt, model: modelId }),
           signal: abortRef.current.signal,
         });
-        const data = await res.json() as { url?: string; error?: string };
+        const data = await res.json() as { frames?: string[]; error?: string };
         if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
         const label = userPrompt.slice(0, 60) + (userPrompt.length > 60 ? '…' : '');
         const newContent = `🎬 *"${label}"*`;
-        update({ content: newContent, mediaUrl: data.url, mediaType: 'video' });
+        update({ content: newContent, mediaFrames: data.frames, mediaType: 'video' });
         const newVersions = [...allVersions, newContent];
         setMsgVersions(prev => new Map(prev).set(msgId, { versions: newVersions, idx: newVersions.length - 1 }));
         persistConversation(
-          messages.map(m => m.id === msgId ? { ...m, content: newContent, mediaUrl: data.url, mediaType: 'video' as const } : m),
+          messages.map(m => m.id === msgId ? { ...m, content: newContent, mediaFrames: data.frames, mediaType: 'video' as const } : m),
           modelId,
         );
       } catch (err: unknown) {
         if (err instanceof Error && err.name === 'AbortError') {
-          update({ content: origContent, mediaUrl: origMediaUrl, mediaType: origMediaType });
+          update({ content: origContent, mediaFrames: targetMsg.mediaFrames, mediaType: origMediaType });
         } else {
           update({ content: `⚠️ ${err instanceof Error ? err.message : 'Video generation failed'}` });
         }
@@ -1264,8 +1265,8 @@ const MessageBubble = memo(function MessageBubble({ message, modelId, theme, onR
         {message.mediaType === 'abc' && message.mediaUrl && (
           <ABCPlayer notation={message.mediaUrl} theme={theme} />
         )}
-        {message.mediaType === 'video' && message.mediaUrl && (
-          <VideoPlayer url={message.mediaUrl} theme={theme} />
+        {message.mediaType === 'video' && message.mediaFrames && message.mediaFrames.length > 0 && (
+          <StoryboardPlayer frames={message.mediaFrames} theme={theme} />
         )}
         <MessageActions
           content={message.content}
@@ -1704,40 +1705,79 @@ function AudioPlayer({ url, theme }: { url: string; theme: ProviderTheme }) {
   );
 }
 
-function VideoPlayer({ url, theme }: { url: string; theme: ProviderTheme }) {
-  const [status, setStatus] = useState<'loading' | 'done' | 'error'>('loading');
+function StoryboardPlayer({ frames, theme }: { frames: string[]; theme: ProviderTheme }) {
+  const [current, setCurrent] = useState(0);
+  const [playing, setPlaying] = useState(true);
+  const [loaded, setLoaded] = useState<boolean[]>(() => new Array(frames.length).fill(false));
+
+  useEffect(() => {
+    if (!playing) return;
+    const id = setInterval(() => setCurrent((p) => (p + 1) % frames.length), 2800);
+    return () => clearInterval(id);
+  }, [playing, frames.length]);
+
+  const markLoaded = (i: number) =>
+    setLoaded((prev) => { const next = [...prev]; next[i] = true; return next; });
+
+  const allReady = loaded.every(Boolean);
+
   return (
-    <div className="mt-2 rounded-xl overflow-hidden border" style={{ borderColor: 'var(--ui-border)', background: 'var(--ui-bg-card)' }}>
-      {status === 'loading' && (
-        <div className="flex items-center justify-center gap-2 py-8" style={{ color: 'var(--ui-text-3)' }}>
-          <Loader2 size={18} className="animate-spin" />
-          <span className="text-sm">Generating video…</span>
+    <div className="mt-2 rounded-xl overflow-hidden border" style={{ borderColor: 'var(--ui-border)', background: 'var(--ui-bg-card)', maxWidth: 560 }}>
+      {/* Frame viewer */}
+      <div className="relative" style={{ aspectRatio: '16/9', background: '#000' }}>
+        {frames.map((url, i) => (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            key={i}
+            src={url}
+            alt={`Frame ${i + 1}`}
+            referrerPolicy="no-referrer"
+            onLoad={() => markLoaded(i)}
+            className="absolute inset-0 w-full h-full object-cover transition-opacity duration-500"
+            style={{ opacity: i === current ? 1 : 0 }}
+          />
+        ))}
+        {!allReady && (
+          <div className="absolute inset-0 flex items-center justify-center gap-2" style={{ color: '#fff', background: 'rgba(0,0,0,0.6)' }}>
+            <Loader2 size={18} className="animate-spin" />
+            <span className="text-sm">Generating frames…</span>
+          </div>
+        )}
+        {/* Frame dots */}
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1.5">
+          {frames.map((_, i) => (
+            <button key={i} onClick={() => setCurrent(i)}
+              className="w-2 h-2 rounded-full transition-all"
+              style={{ background: i === current ? '#fff' : 'rgba(255,255,255,0.4)', transform: i === current ? 'scale(1.3)' : 'scale(1)' }} />
+          ))}
         </div>
-      )}
-      {status === 'error' && (
-        <div className="p-4 text-sm text-red-400">
-          Video failed to load.{' '}
-          <a href={url} target="_blank" rel="noopener noreferrer" className="underline">Open URL</a>
+      </div>
+      {/* Controls */}
+      <div className="flex items-center justify-between px-3 py-2">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setPlaying((p) => !p)}
+            className="px-2.5 py-1 rounded-lg text-xs font-medium transition-colors"
+            style={{ background: theme.primaryColor, color: '#fff' }}
+          >
+            {playing ? '⏸ Pause' : '▶ Play'}
+          </button>
+          <button
+            onClick={() => setCurrent((p) => (p - 1 + frames.length) % frames.length)}
+            className="px-2 py-1 rounded-lg text-xs transition-colors"
+            style={{ background: 'var(--ui-bg-card-hover)', color: 'var(--ui-text-2)' }}
+          >‹</button>
+          <button
+            onClick={() => setCurrent((p) => (p + 1) % frames.length)}
+            className="px-2 py-1 rounded-lg text-xs transition-colors"
+            style={{ background: 'var(--ui-bg-card-hover)', color: 'var(--ui-text-2)' }}
+          >›</button>
+          <span className="text-xs" style={{ color: 'var(--ui-text-3)' }}>
+            {current + 1} / {frames.length}
+          </span>
         </div>
-      )}
-      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-      <video
-        controls
-        playsInline
-        className={`w-full max-w-lg rounded-xl ${status !== 'done' ? 'hidden' : ''}`}
-        onLoadedData={() => setStatus('done')}
-        onError={() => setStatus('error')}
-      >
-        <source src={url} type="video/mp4" />
-      </video>
-      {status === 'done' && (
-        <div className="flex justify-end px-3 py-1">
-          <a href={url} download="generated-video.mp4"
-            className="text-xs hover:underline" style={{ color: theme.primaryColor }}>
-            ↓ Download
-          </a>
-        </div>
-      )}
+        <span className="text-xs font-medium" style={{ color: 'var(--ui-text-3)' }}>AI Storyboard</span>
+      </div>
     </div>
   );
 }

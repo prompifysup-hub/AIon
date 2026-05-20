@@ -12,6 +12,7 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   mediaUrl?: string;
+  mediaFrames?: string[];  // for video storyboard (array of image URLs)
   mediaType?: 'image' | 'audio' | 'abc' | 'video';
   attachments?: Omit<Attachment, 'data' | 'isText'>[];
   timestamp: string;
