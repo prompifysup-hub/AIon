@@ -69,6 +69,7 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [msgVersions, setMsgVersions] = useState<Map<string, { versions: string[]; idx: number }>>(new Map());
   const [feedbackRatings, setFeedbackRatings] = useState<Map<string, number>>(new Map());
+  const [videoLoadingId, setVideoLoadingId] = useState<string | null>(null);
 
   const convIdRef = useRef<string>(conversation?.id ?? crypto.randomUUID());
   const convCreatedAtRef = useRef<string>(conversation?.createdAt ?? new Date().toISOString());
@@ -105,6 +106,7 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
     setAttachments([]);
     setMsgVersions(new Map());
     setFeedbackRatings(new Map());
+    setVideoLoadingId(null);
     window.speechSynthesis?.cancel();
     recognitionRef.current?.stop();
     setIsListening(false);
@@ -183,6 +185,7 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
     abortRef.current?.abort();
     setIsStreaming(false);
     setIsThinking(false);
+    setVideoLoadingId(null);
   };
 
   const toggleMic = useCallback(() => {
@@ -408,6 +411,7 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
       }
 
       if (isVideoGenRequest) {
+        let apiSuccess = false;
         try {
           const res = await fetch('/api/generate/video', {
             method: 'POST',
@@ -423,16 +427,19 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
             mediaFrames: data.frames,
             mediaType: 'video',
           };
+          setIsThinking(false);
+          setVideoLoadingId(assistantId); // keep isStreaming=true until first frame loads
           updateAssistant(patch);
           persistConversation(
             withAssistant.map((m) => (m.id === assistantId ? { ...m, ...patch } : m)),
             modelId,
           );
+          apiSuccess = true;
         } catch (err: unknown) {
           if (err instanceof Error && err.name !== 'AbortError') showError(err.message);
         } finally {
           setIsThinking(false);
-          setIsStreaming(false);
+          if (!apiSuccess) setIsStreaming(false);
         }
         return;
       }
@@ -610,20 +617,22 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
         if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
         const label = userPrompt.slice(0, 60) + (userPrompt.length > 60 ? '…' : '');
         const newContent = `🎬 *"${label}"*`;
-        update({ content: newContent, mediaFrames: data.frames, mediaType: 'video' });
         const newVersions = [...allVersions, newContent];
+        setIsThinking(false);
+        setVideoLoadingId(msgId); // keep isStreaming=true until first frame loads
+        update({ content: newContent, mediaFrames: data.frames, mediaType: 'video' });
         setMsgVersions(prev => new Map(prev).set(msgId, { versions: newVersions, idx: newVersions.length - 1 }));
         persistConversation(
           messages.map(m => m.id === msgId ? { ...m, content: newContent, mediaFrames: data.frames, mediaType: 'video' as const } : m),
           modelId,
         );
+        return; // don't hit finally's setIsStreaming(false)
       } catch (err: unknown) {
         if (err instanceof Error && err.name === 'AbortError') {
           update({ content: origContent, mediaFrames: targetMsg.mediaFrames, mediaType: origMediaType });
         } else {
           update({ content: `⚠️ ${err instanceof Error ? err.message : 'Video generation failed'}` });
         }
-      } finally {
         setIsThinking(false);
         setIsStreaming(false);
       }
@@ -864,6 +873,11 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
                 onNavigateVersion={(dir) => navigateVersion(msg.id, dir)}
                 onFeedback={msg.role === 'assistant' ? handleFeedback : undefined}
                 currentRating={feedbackRatings.get(msg.id)}
+                onVideoLoaded={
+                  msg.id === videoLoadingId
+                    ? () => { setVideoLoadingId(null); setIsStreaming(false); }
+                    : undefined
+                }
               />
             ))}
             {isThinking && (
@@ -1199,7 +1213,7 @@ function EmptyState({ catInfo, theme, onSend }: { catInfo: ReturnType<typeof get
   );
 }
 
-const MessageBubble = memo(function MessageBubble({ message, modelId, theme, onRegenerate, versionEntry, onNavigateVersion, onFeedback, currentRating }: {
+const MessageBubble = memo(function MessageBubble({ message, modelId, theme, onRegenerate, versionEntry, onNavigateVersion, onFeedback, currentRating, onVideoLoaded }: {
   message: Message;
   modelId: string;
   theme: ProviderTheme;
@@ -1208,6 +1222,7 @@ const MessageBubble = memo(function MessageBubble({ message, modelId, theme, onR
   onNavigateVersion?: (dir: -1 | 1) => void;
   onFeedback?: (messageId: string, rating: number) => void;
   currentRating?: number;
+  onVideoLoaded?: () => void;
 }) {
   if (message.role === 'user') {
     return (
@@ -1266,7 +1281,7 @@ const MessageBubble = memo(function MessageBubble({ message, modelId, theme, onR
           <ABCPlayer notation={message.mediaUrl} theme={theme} />
         )}
         {message.mediaType === 'video' && message.mediaFrames && message.mediaFrames.length > 0 && (
-          <StoryboardPlayer frames={message.mediaFrames} theme={theme} />
+          <StoryboardPlayer frames={message.mediaFrames} theme={theme} onFirstLoaded={onVideoLoaded} />
         )}
         <MessageActions
           content={message.content}
@@ -1705,10 +1720,11 @@ function AudioPlayer({ url, theme }: { url: string; theme: ProviderTheme }) {
   );
 }
 
-function StoryboardPlayer({ frames, theme }: { frames: string[]; theme: ProviderTheme }) {
+function StoryboardPlayer({ frames, theme, onFirstLoaded }: { frames: string[]; theme: ProviderTheme; onFirstLoaded?: () => void }) {
   const [current, setCurrent] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [loaded, setLoaded] = useState<boolean[]>(() => new Array(frames.length).fill(false));
+  const calledFirstLoaded = useRef(false);
 
   useEffect(() => {
     if (!playing) return;
@@ -1716,8 +1732,13 @@ function StoryboardPlayer({ frames, theme }: { frames: string[]; theme: Provider
     return () => clearInterval(id);
   }, [playing, frames.length]);
 
-  const markLoaded = (i: number) =>
+  const markLoaded = (i: number) => {
     setLoaded((prev) => { const next = [...prev]; next[i] = true; return next; });
+    if (!calledFirstLoaded.current) {
+      calledFirstLoaded.current = true;
+      onFirstLoaded?.();
+    }
+  };
 
   const allReady = loaded.every(Boolean);
 
