@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback, startTransition, memo, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, startTransition, memo, useMemo, useId } from 'react';
 import { useSession } from 'next-auth/react';
 import { Message, Attachment } from '@/types';
 import { Category, AIModel, getCategoryInfo, getModelInfo } from '@/lib/models';
@@ -304,13 +304,13 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
             body: JSON.stringify({ prompt: content.trim(), model: modelId }),
             signal: abortRef.current.signal,
           });
-          const data = await res.json() as { url?: string; error?: string };
+          const data = await res.json() as { notation?: string; error?: string };
           if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
           const label = content.trim().slice(0, 60) + (content.trim().length > 60 ? '…' : '');
           const patch: Partial<Message> = {
             content: `🎵 *"${label}"*`,
-            mediaUrl: data.url,
-            mediaType: 'audio',
+            mediaUrl: data.notation,
+            mediaType: 'abc',
           };
           updateAssistant(patch);
           persistConversation(
@@ -478,8 +478,9 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
 
     const isImageRegen = origMediaType === 'image' || (getModelInfo(category, modelId)?.isImageGen ?? false);
     const isAudioRegen = origMediaType === 'audio';
+    const isAbcRegen = origMediaType === 'abc';
 
-    if (isAudioRegen) {
+    if (isAudioRegen || isAbcRegen) {
       const userPrompt = base[base.length - 1].content;
       const isTTS = category === 'speech' || (getModelInfo(category, modelId)?.isTTS ?? false);
       const endpoint = isTTS ? '/api/generate/speech' : '/api/generate/audio';
@@ -491,15 +492,17 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
           body: JSON.stringify(body),
           signal: abortRef.current.signal,
         });
-        const data = await res.json() as { url?: string; error?: string };
+        const data = await res.json() as { url?: string; notation?: string; error?: string };
         if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
         const label = userPrompt.slice(0, 60) + (userPrompt.length > 60 ? '…' : '');
         const newContent = isTTS ? `🗣️ *"${label}"*` : `🎵 *"${label}"*`;
+        const newMediaUrl = data.url ?? data.notation;
+        const newMediaType = isTTS ? 'audio' : (data.notation ? 'abc' : 'audio');
         const newVersions = [...allVersions, newContent];
-        update({ content: newContent, mediaUrl: data.url, mediaType: 'audio' });
+        update({ content: newContent, mediaUrl: newMediaUrl, mediaType: newMediaType as Message['mediaType'] });
         setMsgVersions(prev => new Map(prev).set(msgId, { versions: newVersions, idx: newVersions.length - 1 }));
         persistConversation(
-          messages.map(m => m.id === msgId ? { ...m, content: newContent, mediaUrl: data.url, mediaType: 'audio' as const } : m),
+          messages.map(m => m.id === msgId ? { ...m, content: newContent, mediaUrl: newMediaUrl, mediaType: newMediaType as Message['mediaType'] } : m),
           modelId,
         );
       } catch (err: unknown) {
@@ -1121,6 +1124,9 @@ const MessageBubble = memo(function MessageBubble({ message, modelId, theme, onR
         {message.mediaType === 'audio' && message.mediaUrl && (
           <AudioPlayer url={message.mediaUrl} theme={theme} />
         )}
+        {message.mediaType === 'abc' && message.mediaUrl && (
+          <ABCPlayer notation={message.mediaUrl} theme={theme} />
+        )}
         <MessageActions content={message.content} theme={theme} onRegenerate={onRegenerate} versionEntry={versionEntry} onNavigateVersion={onNavigateVersion} />
       </div>
     </div>
@@ -1443,6 +1449,66 @@ function FileBlock({ lang, content, theme }: {
       <pre className="p-4 overflow-auto text-xs h-48" style={{ color: 'var(--ui-text-3)' }}>
         <code>{content}</code>
       </pre>
+    </div>
+  );
+}
+
+function ABCPlayer({ notation, theme }: { notation: string; theme: ProviderTheme }) {
+  const renderId = useId();
+  const audioRef = useRef<{ stop?: () => void } | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    import('abcjs').then((abcjs) => {
+      if (cancelled) return;
+      try {
+        abcjs.renderAbc(`abc-notation-${renderId}`, notation, { responsive: 'resize' });
+        setReady(true);
+      } catch {
+        setError('Could not render notation');
+      }
+    });
+    return () => { cancelled = true; audioRef.current?.stop?.(); };
+  }, [notation, renderId]);
+
+  const toggle = async () => {
+    const abcjs = await import('abcjs');
+    if (!abcjs.synth.supportsAudio()) { setError('Audio not supported in this browser'); return; }
+    if (playing) {
+      audioRef.current?.stop?.();
+      setPlaying(false);
+      return;
+    }
+    try {
+      const visualObj = abcjs.renderAbc(`abc-notation-${renderId}`, notation)[0];
+      const synth = new abcjs.synth.CreateSynth();
+      await synth.init({ visualObj });
+      await synth.prime();
+      synth.start();
+      setPlaying(true);
+      audioRef.current = { stop: () => { synth.stop(); setPlaying(false); } };
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Playback failed');
+    }
+  };
+
+  return (
+    <div className="mt-2 rounded-xl border overflow-hidden" style={{ borderColor: 'var(--ui-border)', background: 'var(--ui-bg-card)' }}>
+      <div id={`abc-notation-${renderId}`} className="px-3 pt-2 overflow-x-auto" style={{ color: 'var(--ui-text-1)', maxHeight: '200px' }} />
+      {error && <p className="px-3 text-xs text-red-500">{error}</p>}
+      {ready && !error && (
+        <div className="flex items-center gap-2 px-3 py-2">
+          <button onClick={toggle}
+            className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-medium transition-colors"
+            style={{ background: theme.primaryColor, color: '#fff' }}>
+            {playing ? '⏹ Stop' : '▶ Play'}
+          </button>
+          <span className="text-xs" style={{ color: 'var(--ui-text-3)' }}>Sheet music · ABC notation</span>
+        </div>
+      )}
     </div>
   );
 }

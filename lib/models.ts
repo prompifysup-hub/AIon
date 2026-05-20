@@ -55,11 +55,11 @@ export const categories: CategoryInfo[] = [
     emoji: '🎵',
     color: '#F59E0B',
     models: [
-      { id: 'musicgen-small',        name: 'MusicGen Small',   description: 'Fast generation',   icon: '🎵', isMusicGen: true },
-      { id: 'musicgen-medium',       name: 'MusicGen Medium',  description: 'Balanced quality',  icon: '🎵', isMusicGen: true },
-      { id: 'musicgen-large',        name: 'MusicGen Large',   description: 'High quality',      icon: '🎵', isMusicGen: true },
-      { id: 'musicgen-stereo-small', name: 'Stereo Small',     description: 'Stereo, fast',      icon: '🎵', isMusicGen: true },
-      { id: 'musicgen-stereo-large', name: 'Stereo Large',     description: 'Best stereo',       icon: '🎵', isMusicGen: true },
+      { id: 'classic', name: 'Classical',  description: 'Mozart / Beethoven style', icon: '🎹', isMusicGen: true },
+      { id: 'jazz',    name: 'Jazz',       description: 'Swing & blue notes',       icon: '🎷', isMusicGen: true },
+      { id: 'pop',     name: 'Pop',        description: 'Catchy modern melody',     icon: '🎸', isMusicGen: true },
+      { id: 'ambient', name: 'Ambient',    description: 'Calm & atmospheric',       icon: '🌊', isMusicGen: true },
+      { id: 'folk',    name: 'Folk',       description: 'Simple acoustic tune',     icon: '🪕', isMusicGen: true },
     ],
   },
   {
