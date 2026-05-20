@@ -589,6 +589,9 @@ export function SettingsModal({ onClose }: Props) {
   const [inviteOrgId, setInviteOrgId] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteStatus, setInviteStatus] = useState('');
+  const [inviteTokens, setInviteTokens] = useState<Record<string, string>>({});
+  const [linkCopied, setLinkCopied] = useState<Record<string, boolean>>({});
+  const [linkLoading, setLinkLoading] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     setDisplayName(localStorage.getItem('aion_display_name') || session?.user?.name || '');
@@ -678,8 +681,52 @@ export function SettingsModal({ onClose }: Props) {
       body: JSON.stringify({ orgId: inviteOrgId, email: inviteEmail }),
     });
     const data = await res.json();
-    setInviteStatus(data.ok ? 'Invited!' : (data.error ?? 'Error'));
-    if (data.ok) { setInviteEmail(''); setTimeout(() => setInviteStatus(''), 2000); }
+    if (res.status === 404) {
+      setInviteStatus('User not found — share the invite link instead');
+    } else {
+      setInviteStatus(data.ok ? 'Added!' : (data.error ?? 'Error'));
+    }
+    if (data.ok) { setInviteEmail(''); setTimeout(() => setInviteStatus(''), 2500); }
+  };
+
+  const getInviteToken = async (orgId: string): Promise<string | null> => {
+    if (inviteTokens[orgId]) return inviteTokens[orgId];
+    setLinkLoading((p) => ({ ...p, [orgId]: true }));
+    try {
+      const res = await fetch(`/api/orgs/invite?orgId=${orgId}`);
+      const data = await res.json();
+      if (data.token) {
+        setInviteTokens((p) => ({ ...p, [orgId]: data.token }));
+        return data.token;
+      }
+    } finally {
+      setLinkLoading((p) => ({ ...p, [orgId]: false }));
+    }
+    return null;
+  };
+
+  const copyInviteLink = async (orgId: string) => {
+    const token = await getInviteToken(orgId);
+    if (!token) return;
+    const url = `${window.location.origin}/invite/${token}`;
+    await navigator.clipboard.writeText(url);
+    setLinkCopied((p) => ({ ...p, [orgId]: true }));
+    setTimeout(() => setLinkCopied((p) => ({ ...p, [orgId]: false })), 2000);
+  };
+
+  const regenerateLink = async (orgId: string) => {
+    setLinkLoading((p) => ({ ...p, [orgId]: true }));
+    try {
+      const res = await fetch('/api/orgs/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orgId }),
+      });
+      const data = await res.json();
+      if (data.token) setInviteTokens((p) => ({ ...p, [orgId]: data.token }));
+    } finally {
+      setLinkLoading((p) => ({ ...p, [orgId]: false }));
+    }
   };
 
   useEffect(() => {
@@ -1075,25 +1122,68 @@ export function SettingsModal({ onClose }: Props) {
                               </button>
                             )}
                           </div>
-                          {/* Invite form for owners/admins */}
+                          {/* Invite section for owners/admins */}
                           {(o.role === 'owner' || o.role === 'admin') && (
-                            <div className="flex gap-2 pt-1 border-t" style={{ borderColor: 'var(--ui-border)' }}>
-                              <input
-                                type="email"
-                                value={inviteOrgId === o.id ? inviteEmail : ''}
-                                onChange={(e) => { setInviteOrgId(o.id); setInviteEmail(e.target.value); }}
-                                placeholder="Invite by email…"
-                                className="flex-1 px-2.5 py-1.5 rounded-lg text-xs outline-none"
-                                style={{ background: 'var(--ui-input-bg)', border: '1px solid var(--ui-input-border)', color: 'var(--ui-text-1)' }}
-                              />
-                              <button
-                                onClick={inviteMember}
-                                disabled={!inviteEmail.trim() || inviteOrgId !== o.id}
-                                className="px-3 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-40"
-                                style={{ background: '#8B5CF6' }}
-                              >
-                                {inviteStatus && inviteOrgId === o.id ? inviteStatus : 'Invite'}
-                              </button>
+                            <div className="pt-2 border-t space-y-2" style={{ borderColor: 'var(--ui-border)' }}>
+                              {/* Copy invite link */}
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 px-2.5 py-1.5 rounded-lg text-xs font-mono truncate"
+                                  style={{ background: 'var(--ui-input-bg)', border: '1px solid var(--ui-input-border)', color: 'var(--ui-text-3)' }}>
+                                  {inviteTokens[o.id]
+                                    ? `${typeof window !== 'undefined' ? window.location.origin : ''}/invite/${inviteTokens[o.id]}`
+                                    : 'Click "Copy link" to generate…'}
+                                </div>
+                                <button
+                                  onClick={() => copyInviteLink(o.id)}
+                                  disabled={linkLoading[o.id]}
+                                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-white shrink-0 disabled:opacity-50"
+                                  style={{ background: linkCopied[o.id] ? '#22C55E' : 'linear-gradient(135deg,#8B5CF6,#3B82F6)' }}
+                                >
+                                  {linkLoading[o.id] ? (
+                                    <Loader2 size={11} className="animate-spin" />
+                                  ) : linkCopied[o.id] ? (
+                                    <><Check size={11} /> Copied!</>
+                                  ) : (
+                                    <><Copy size={11} /> Copy link</>
+                                  )}
+                                </button>
+                                <button
+                                  onClick={() => regenerateLink(o.id)}
+                                  disabled={linkLoading[o.id]}
+                                  title="Regenerate link"
+                                  className="px-2 py-1.5 rounded-lg text-xs disabled:opacity-40"
+                                  style={{ color: 'var(--ui-text-3)', border: '1px solid var(--ui-border)' }}
+                                  onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--ui-text-1)')}
+                                  onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--ui-text-3)')}
+                                >
+                                  ↺
+                                </button>
+                              </div>
+                              {/* Email invite (existing users) */}
+                              <div className="flex gap-2">
+                                <input
+                                  type="email"
+                                  value={inviteOrgId === o.id ? inviteEmail : ''}
+                                  onChange={(e) => { setInviteOrgId(o.id); setInviteEmail(e.target.value); setInviteStatus(''); }}
+                                  placeholder="Add by email (existing users)…"
+                                  className="flex-1 px-2.5 py-1.5 rounded-lg text-xs outline-none"
+                                  style={{ background: 'var(--ui-input-bg)', border: '1px solid var(--ui-input-border)', color: 'var(--ui-text-1)' }}
+                                  onKeyDown={(e) => e.key === 'Enter' && inviteMember()}
+                                />
+                                <button
+                                  onClick={inviteMember}
+                                  disabled={!inviteEmail.trim() || inviteOrgId !== o.id}
+                                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-40 shrink-0"
+                                  style={{ background: '#8B5CF6' }}
+                                >
+                                  Add
+                                </button>
+                              </div>
+                              {inviteStatus && inviteOrgId === o.id && (
+                                <p className="text-xs" style={{ color: inviteStatus.startsWith('User not found') ? '#f87171' : inviteStatus === 'Added!' ? '#22C55E' : '#f87171' }}>
+                                  {inviteStatus}
+                                </p>
+                              )}
                             </div>
                           )}
                         </div>

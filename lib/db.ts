@@ -51,6 +51,19 @@ export async function ensureSchema() {
       ON aion_message_feedback (conversation_id);
   `);
 
+  // Invite tokens for organizations
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS organization_invites (
+      id          BIGSERIAL PRIMARY KEY,
+      org_id      BIGINT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      token       TEXT NOT NULL UNIQUE,
+      created_by  BIGINT NOT NULL REFERENCES users(id),
+      created_at  TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_org_invites_token ON organization_invites(token);
+    CREATE INDEX IF NOT EXISTS idx_org_invites_org   ON organization_invites(org_id);
+  `);
+
   await seedData();
   ready = true;
 }
