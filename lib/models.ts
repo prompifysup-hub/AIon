@@ -2,7 +2,7 @@
 
 export type Category =
   | 'text' | 'image' | 'audio' | 'video'
-  | 'speech' | 'transcription' | 'document' | 'study';
+  | 'document' | 'study';
 
 export interface AIModel {
   id: string;          // OpenRouter model ID, Pollinations model name, TTS voice, or MusicGen model
@@ -55,11 +55,19 @@ export const categories: CategoryInfo[] = [
     emoji: '🎵',
     color: '#F59E0B',
     models: [
-      { id: 'classic', name: 'Classical',  description: 'Mozart / Beethoven style', icon: '🎹', isMusicGen: true },
-      { id: 'jazz',    name: 'Jazz',       description: 'Swing & blue notes',       icon: '🎷', isMusicGen: true },
-      { id: 'pop',     name: 'Pop',        description: 'Catchy modern melody',     icon: '🎸', isMusicGen: true },
-      { id: 'ambient', name: 'Ambient',    description: 'Calm & atmospheric',       icon: '🌊', isMusicGen: true },
-      { id: 'folk',    name: 'Folk',       description: 'Simple acoustic tune',     icon: '🪕', isMusicGen: true },
+      // Music generation
+      { id: 'classic', name: 'Classical',  description: 'Generate classical music', icon: '🎹', isMusicGen: true },
+      { id: 'jazz',    name: 'Jazz',       description: 'Generate jazz music',      icon: '🎷', isMusicGen: true },
+      { id: 'pop',     name: 'Pop',        description: 'Generate pop music',       icon: '🎸', isMusicGen: true },
+      { id: 'ambient', name: 'Ambient',    description: 'Generate ambient music',   icon: '🌊', isMusicGen: true },
+      // Text-to-speech
+      { id: 'en',    name: 'English (TTS)',    description: 'Speak text in English',    icon: '🗣️', isTTS: true },
+      { id: 'en-gb', name: 'British (TTS)',    description: 'Speak text in British',    icon: '🗣️', isTTS: true },
+      { id: 'fr',    name: 'French (TTS)',     description: 'Speak text in French',     icon: '🗣️', isTTS: true },
+      { id: 'th',    name: 'Thai (TTS)',       description: 'Speak text in Thai',       icon: '🗣️', isTTS: true },
+      // Transcription / general
+      { id: 'google/gemini-2.0-flash-001', name: 'Gemini Flash', description: 'Transcription & audio help', icon: '✨' },
+      { id: 'openai/gpt-4o',               name: 'GPT-4o',       description: 'Transcription & audio help', icon: '🟢' },
     ],
   },
   {
@@ -68,37 +76,11 @@ export const categories: CategoryInfo[] = [
     emoji: '🎬',
     color: '#10B981',
     models: [
-      { id: 'openai/gpt-4o',                        name: 'GPT-4o',            description: 'Visual analysis',   icon: '🟢' },
-      { id: 'anthropic/claude-3.5-sonnet',           name: 'Claude 3.5 Sonnet', description: 'Scene description', icon: '🟣' },
-      { id: 'google/gemini-2.0-flash-001',           name: 'Gemini 2.0 Flash',  description: 'Video understanding', icon: '✨' },
-      { id: 'deepseek/deepseek-chat',                name: 'DeepSeek V3',       description: 'Video tasks',       icon: '🔵' },
-      { id: 'meta-llama/llama-3.3-70b-instruct',    name: 'Llama 3.3 70B',    description: 'Open & capable',    icon: '🦙' },
-    ],
-  },
-  {
-    id: 'speech',
-    label: 'Speech',
-    emoji: '🗣️',
-    color: '#EF4444',
-    models: [
-      { id: 'en',    name: 'English',    description: 'Standard English',     icon: '🗣️', isTTS: true },
-      { id: 'en-gb', name: 'British',    description: 'British English',       icon: '🗣️', isTTS: true },
-      { id: 'en-au', name: 'Australian', description: 'Australian English',    icon: '🗣️', isTTS: true },
-      { id: 'fr',    name: 'French',     description: 'French voice',          icon: '🗣️', isTTS: true },
-      { id: 'th',    name: 'Thai',       description: 'Thai voice',            icon: '🗣️', isTTS: true },
-    ],
-  },
-  {
-    id: 'transcription',
-    label: 'Transcription',
-    emoji: '📝',
-    color: '#0EA5E9',
-    models: [
-      { id: 'openai/gpt-4o',                        name: 'GPT-4o',            description: 'Accurate output',   icon: '🟢' },
-      { id: 'anthropic/claude-3.5-sonnet',           name: 'Claude 3.5 Sonnet', description: 'Clean transcripts', icon: '🟣' },
-      { id: 'google/gemini-2.0-flash-001',           name: 'Gemini 2.0 Flash',  description: 'Fast transcription', icon: '✨' },
-      { id: 'deepseek/deepseek-chat',                name: 'DeepSeek V3',       description: 'Technical content', icon: '🔵' },
-      { id: 'qwen/qwen-2.5-72b-instruct',            name: 'Qwen 2.5 72B',      description: 'Multilingual',      icon: '🔶' },
+      { id: 'openai/gpt-4o',                        name: 'GPT-4o',            description: 'Visual analysis',      icon: '🟢' },
+      { id: 'anthropic/claude-3.5-sonnet',           name: 'Claude 3.5 Sonnet', description: 'Scene description',    icon: '🟣' },
+      { id: 'google/gemini-2.0-flash-001',           name: 'Gemini 2.0 Flash',  description: 'Video understanding',  icon: '✨' },
+      { id: 'deepseek/deepseek-chat',                name: 'DeepSeek V3',       description: 'Video tasks',          icon: '🔵' },
+      { id: 'meta-llama/llama-3.3-70b-instruct',    name: 'Llama 3.3 70B',    description: 'Open & capable',       icon: '🦙' },
     ],
   },
   {

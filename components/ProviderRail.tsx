@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import {
-  MessageSquare, Image, Music, Video,
-  Mic, FileText, File, BookOpen, ChevronLeft, ChevronRight,
+  MessageSquare, Image, Headphones, Video,
+  File, BookOpen, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Category, categories } from '@/lib/models';
@@ -11,14 +11,12 @@ import { getCategoryTheme } from '@/lib/providerThemes';
 import { useAccent } from '@/lib/accent';
 
 const CATEGORY_ICONS: Record<Category, LucideIcon> = {
-  text:          MessageSquare,
-  image:         Image,
-  audio:         Music,
-  video:         Video,
-  speech:        Mic,
-  transcription: FileText,
-  document:      File,
-  study:         BookOpen,
+  text:     MessageSquare,
+  image:    Image,
+  audio:    Headphones,
+  video:    Video,
+  document: File,
+  study:    BookOpen,
 };
 
 interface Props {

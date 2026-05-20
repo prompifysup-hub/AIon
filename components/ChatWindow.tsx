@@ -302,8 +302,10 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
       const isImageGenModel = selectedModelInfo?.isImageGen ?? false;
       const isImageRequest = (isImageGenModel || (IMAGE_VERB_RE.test(trimmed) && IMAGE_NOUN_RE.test(trimmed))) && !hasTextAttachment;
 
-      const isTTSRequest = selectedModelInfo?.isTTS || category === 'speech';
-      const isMusicGenRequest = selectedModelInfo?.isMusicGen || category === 'audio';
+      const MUSIC_RE = /\b(generat|creat|compos|make|produc|play).{0,30}(music|song|melody|tune|jazz|classical|pop|ambient|folk|beat|track|audio)\b|\b(music|song|melody|tune|jazz|classical|ambient|folk)\b/i;
+      const SPEECH_RE = /\b(speak|say|read\s+aloud|text.to.speech|tts|convert.{0,20}(to\s+)?(speech|audio|voice|mp3)|voice\s+over|narrat)\b/i;
+      const isTTSRequest = selectedModelInfo?.isTTS || SPEECH_RE.test(content.trim());
+      const isMusicGenRequest = selectedModelInfo?.isMusicGen || (category === 'audio' && MUSIC_RE.test(content.trim()) && !isTTSRequest);
 
       if (isTTSRequest) {
         try {
@@ -521,7 +523,7 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
 
     if (isAudioRegen || isAbcRegen) {
       const userPrompt = base[base.length - 1].content;
-      const isTTS = category === 'speech' || (getModelInfo(category, modelId)?.isTTS ?? false);
+      const isTTS = (getModelInfo(category, modelId)?.isTTS ?? false);
       const endpoint = isTTS ? '/api/generate/speech' : '/api/generate/audio';
       const body = isTTS ? { text: userPrompt, voice: modelId } : { prompt: userPrompt, model: modelId };
       try {

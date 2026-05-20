@@ -308,9 +308,9 @@ function VisualCategories() {
     { e: '💬', n: 'Text',          c: '#8B5CF6' },
     { e: '🎨', n: 'Image',         c: '#F97316' },
     { e: '🎵', n: 'Audio',         c: '#F59E0B' },
-    { e: '🗣️', n: 'Speech',        c: '#EF4444' },
+    { e: '🎬', n: 'Video',         c: '#10B981' },
     { e: '📄', n: 'Document',      c: '#06B6D4' },
-    { e: '📚', n: 'Study',         c: '#10B981' },
+    { e: '📚', n: 'Study',         c: '#F97316' },
   ];
   return (
     <div style={{ ...S.card, padding: 12, height: 164, display: 'flex', flexDirection: 'column', gap: 8, overflow: 'hidden' }}>
@@ -514,7 +514,7 @@ const TUTORIAL_TOPICS = [
     emoji: '🗂️',
     icon: LayoutGrid,
     title: 'AI Category Types',
-    text: 'AIon supports six types of AI. Text is for general chat. Image generates pictures from your description — just type something like "generate an image of a sunset". Audio creates music in styles like Classical, Jazz, or Pop. Speech converts your words into spoken MP3 audio in different languages. Document helps write formatted documents, spreadsheets, and presentations. Study creates interactive exams, flashcards, and diagrams like flowcharts and mind maps.',
+    text: 'AIon supports six types of AI. Text is for general chat. Image generates pictures from your description — just type something like "generate an image of a sunset". Audio handles everything sound-related: ask it to "generate jazz music", "speak this text in French", or "transcribe this" and it detects what you want automatically. Video is for visual analysis and understanding. Document helps write formatted documents and presentations. Study creates interactive exams, flashcards, and diagrams.',
     Visual: VisualCategories,
   },
   {
