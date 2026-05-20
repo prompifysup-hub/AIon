@@ -263,6 +263,69 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
       const isImageGenModel = selectedModelInfo?.isImageGen ?? false;
       const isImageRequest = (isImageGenModel || (IMAGE_VERB_RE.test(trimmed) && IMAGE_NOUN_RE.test(trimmed))) && !hasTextAttachment;
 
+      const isTTSRequest = selectedModelInfo?.isTTS || category === 'speech';
+      const isMusicGenRequest = selectedModelInfo?.isMusicGen || category === 'audio';
+
+      if (isTTSRequest) {
+        try {
+          const res = await fetch('/api/generate/speech', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: content.trim(), voice: modelId }),
+            signal: abortRef.current.signal,
+          });
+          const data = await res.json() as { url?: string; error?: string };
+          if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+          const label = content.trim().slice(0, 60) + (content.trim().length > 60 ? '…' : '');
+          const patch: Partial<Message> = {
+            content: `🗣️ *"${label}"*`,
+            mediaUrl: data.url,
+            mediaType: 'audio',
+          };
+          updateAssistant(patch);
+          persistConversation(
+            withAssistant.map((m) => (m.id === assistantId ? { ...m, ...patch } : m)),
+            modelId,
+          );
+        } catch (err: unknown) {
+          if (err instanceof Error && err.name !== 'AbortError') showError(err.message);
+        } finally {
+          setIsThinking(false);
+          setIsStreaming(false);
+        }
+        return;
+      }
+
+      if (isMusicGenRequest) {
+        try {
+          const res = await fetch('/api/generate/audio', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: content.trim(), model: modelId }),
+            signal: abortRef.current.signal,
+          });
+          const data = await res.json() as { url?: string; error?: string };
+          if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+          const label = content.trim().slice(0, 60) + (content.trim().length > 60 ? '…' : '');
+          const patch: Partial<Message> = {
+            content: `🎵 *"${label}"*`,
+            mediaUrl: data.url,
+            mediaType: 'audio',
+          };
+          updateAssistant(patch);
+          persistConversation(
+            withAssistant.map((m) => (m.id === assistantId ? { ...m, ...patch } : m)),
+            modelId,
+          );
+        } catch (err: unknown) {
+          if (err instanceof Error && err.name !== 'AbortError') showError(err.message);
+        } finally {
+          setIsThinking(false);
+          setIsStreaming(false);
+        }
+        return;
+      }
+
       if (isImageRequest) {
         try {
           const res = await fetch('/api/generate/image', {
@@ -414,6 +477,43 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
       setMessages(prev => prev.map(m => m.id === msgId ? { ...m, ...u } : m));
 
     const isImageRegen = origMediaType === 'image' || (getModelInfo(category, modelId)?.isImageGen ?? false);
+    const isAudioRegen = origMediaType === 'audio';
+
+    if (isAudioRegen) {
+      const userPrompt = base[base.length - 1].content;
+      const isTTS = category === 'speech' || (getModelInfo(category, modelId)?.isTTS ?? false);
+      const endpoint = isTTS ? '/api/generate/speech' : '/api/generate/audio';
+      const body = isTTS ? { text: userPrompt, voice: modelId } : { prompt: userPrompt, model: modelId };
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: abortRef.current.signal,
+        });
+        const data = await res.json() as { url?: string; error?: string };
+        if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+        const label = userPrompt.slice(0, 60) + (userPrompt.length > 60 ? '…' : '');
+        const newContent = isTTS ? `🗣️ *"${label}"*` : `🎵 *"${label}"*`;
+        const newVersions = [...allVersions, newContent];
+        update({ content: newContent, mediaUrl: data.url, mediaType: 'audio' });
+        setMsgVersions(prev => new Map(prev).set(msgId, { versions: newVersions, idx: newVersions.length - 1 }));
+        persistConversation(
+          messages.map(m => m.id === msgId ? { ...m, content: newContent, mediaUrl: data.url, mediaType: 'audio' as const } : m),
+          modelId,
+        );
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          update({ content: origContent, mediaUrl: origMediaUrl, mediaType: origMediaType });
+        } else {
+          update({ content: `⚠️ ${err instanceof Error ? err.message : 'Audio generation failed'}` });
+        }
+      } finally {
+        setIsThinking(false);
+        setIsStreaming(false);
+      }
+      return;
+    }
 
     if (isImageRegen) {
       // ── Image regeneration ────────────────────────────────────────────
@@ -1018,6 +1118,9 @@ const MessageBubble = memo(function MessageBubble({ message, modelId, theme, onR
         {message.mediaType === 'image' && message.mediaUrl && (
           <GeneratedImage url={message.mediaUrl} theme={theme} />
         )}
+        {message.mediaType === 'audio' && message.mediaUrl && (
+          <AudioPlayer url={message.mediaUrl} theme={theme} />
+        )}
         <MessageActions content={message.content} theme={theme} onRegenerate={onRegenerate} versionEntry={versionEntry} onNavigateVersion={onNavigateVersion} />
       </div>
     </div>
@@ -1340,6 +1443,23 @@ function FileBlock({ lang, content, theme }: {
       <pre className="p-4 overflow-auto text-xs h-48" style={{ color: 'var(--ui-text-3)' }}>
         <code>{content}</code>
       </pre>
+    </div>
+  );
+}
+
+function AudioPlayer({ url, theme }: { url: string; theme: ProviderTheme }) {
+  const ext = url.includes('audio/mp3') ? 'speech.mp3' : 'audio.flac';
+  return (
+    <div className="mt-2 rounded-xl overflow-hidden border" style={{ borderColor: 'var(--ui-border)', background: 'var(--ui-bg-card)' }}>
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+      <audio controls className="w-full" style={{ height: '40px', display: 'block' }}>
+        <source src={url} />
+      </audio>
+      <div className="flex justify-end px-3 py-1">
+        <a href={url} download={ext} className="text-xs hover:underline" style={{ color: theme.primaryColor }}>
+          ↓ Download
+        </a>
+      </div>
     </div>
   );
 }

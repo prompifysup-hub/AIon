@@ -1,15 +1,17 @@
 // ─── New category-based model system ──────────────────────────────────────
 
 export type Category =
-  | 'text' | 'image' | 'embeddings' | 'audio' | 'video'
-  | 'rerank' | 'speech' | 'transcription' | 'document' | 'study';
+  | 'text' | 'image' | 'audio' | 'video'
+  | 'speech' | 'transcription' | 'document' | 'study';
 
 export interface AIModel {
-  id: string;          // OpenRouter model ID, or Pollinations model name for image gen
+  id: string;          // OpenRouter model ID, Pollinations model name, TTS voice, or MusicGen model
   name: string;
   description: string;
   icon: string;
-  isImageGen?: boolean; // routes to image generation API instead of chat
+  isImageGen?: boolean;  // routes to /api/generate/image
+  isTTS?: boolean;       // routes to /api/generate/speech (OpenAI TTS voice)
+  isMusicGen?: boolean;  // routes to /api/generate/audio (HuggingFace MusicGen)
 }
 
 export interface CategoryInfo {
@@ -48,29 +50,16 @@ export const categories: CategoryInfo[] = [
     ],
   },
   {
-    id: 'embeddings',
-    label: 'Embeddings',
-    emoji: '🔢',
-    color: '#8B5CF6',
-    models: [
-      { id: 'openai/gpt-4o',                        name: 'GPT-4o',            description: 'Semantic analysis', icon: '🟢' },
-      { id: 'anthropic/claude-3.5-sonnet',           name: 'Claude 3.5 Sonnet', description: 'Text understanding', icon: '🟣' },
-      { id: 'google/gemini-2.0-flash-001',           name: 'Gemini 2.0 Flash',  description: 'Embedding tasks',   icon: '✨' },
-      { id: 'deepseek/deepseek-chat',                name: 'DeepSeek V3',       description: 'Code & text',       icon: '🔵' },
-      { id: 'qwen/qwen-2.5-72b-instruct',            name: 'Qwen 2.5 72B',      description: 'Multilingual',      icon: '🔶' },
-    ],
-  },
-  {
     id: 'audio',
     label: 'Audio',
     emoji: '🎵',
     color: '#F59E0B',
     models: [
-      { id: 'openai/gpt-4o',                        name: 'GPT-4o',            description: 'Audio understanding', icon: '🟢' },
-      { id: 'anthropic/claude-3.5-sonnet',           name: 'Claude 3.5 Sonnet', description: 'Audio analysis',    icon: '🟣' },
-      { id: 'google/gemini-2.0-flash-001',           name: 'Gemini 2.0 Flash',  description: 'Multimodal audio',  icon: '✨' },
-      { id: 'deepseek/deepseek-chat',                name: 'DeepSeek V3',       description: 'Audio tasks',       icon: '🔵' },
-      { id: 'meta-llama/llama-3.3-70b-instruct',    name: 'Llama 3.3 70B',    description: 'Open source',       icon: '🦙' },
+      { id: 'musicgen-small',        name: 'MusicGen Small',   description: 'Fast generation',   icon: '🎵', isMusicGen: true },
+      { id: 'musicgen-medium',       name: 'MusicGen Medium',  description: 'Balanced quality',  icon: '🎵', isMusicGen: true },
+      { id: 'musicgen-large',        name: 'MusicGen Large',   description: 'High quality',      icon: '🎵', isMusicGen: true },
+      { id: 'musicgen-stereo-small', name: 'Stereo Small',     description: 'Stereo, fast',      icon: '🎵', isMusicGen: true },
+      { id: 'musicgen-stereo-large', name: 'Stereo Large',     description: 'Best stereo',       icon: '🎵', isMusicGen: true },
     ],
   },
   {
@@ -87,29 +76,16 @@ export const categories: CategoryInfo[] = [
     ],
   },
   {
-    id: 'rerank',
-    label: 'Rerank',
-    emoji: '↕️',
-    color: '#6366F1',
-    models: [
-      { id: 'openai/gpt-4o',                        name: 'GPT-4o',            description: 'Relevance ranking', icon: '🟢' },
-      { id: 'anthropic/claude-3.5-sonnet',           name: 'Claude 3.5 Sonnet', description: 'Semantic ranking',  icon: '🟣' },
-      { id: 'google/gemini-2.0-flash-001',           name: 'Gemini 2.0 Flash',  description: 'Content reranking', icon: '✨' },
-      { id: 'deepseek/deepseek-chat',                name: 'DeepSeek V3',       description: 'Rerank & sort',     icon: '🔵' },
-      { id: 'meta-llama/llama-3.3-70b-instruct',    name: 'Llama 3.3 70B',    description: 'Open source',       icon: '🦙' },
-    ],
-  },
-  {
     id: 'speech',
     label: 'Speech',
     emoji: '🗣️',
     color: '#EF4444',
     models: [
-      { id: 'openai/gpt-4o',                        name: 'GPT-4o',            description: 'Speech scripts',    icon: '🟢' },
-      { id: 'anthropic/claude-3.5-sonnet',           name: 'Claude 3.5 Sonnet', description: 'Voice content',     icon: '🟣' },
-      { id: 'google/gemini-2.0-flash-001',           name: 'Gemini 2.0 Flash',  description: 'Multilingual',      icon: '✨' },
-      { id: 'deepseek/deepseek-chat',                name: 'DeepSeek V3',       description: 'TTS scripts',       icon: '🔵' },
-      { id: 'qwen/qwen-2.5-72b-instruct',            name: 'Qwen 2.5 72B',      description: 'Asian languages',   icon: '🔶' },
+      { id: 'alloy',   name: 'Alloy',   description: 'Balanced & natural',   icon: '🗣️', isTTS: true },
+      { id: 'echo',    name: 'Echo',    description: 'Crisp & clear',         icon: '🗣️', isTTS: true },
+      { id: 'fable',   name: 'Fable',   description: 'Warm & expressive',     icon: '🗣️', isTTS: true },
+      { id: 'onyx',    name: 'Onyx',    description: 'Deep & authoritative',  icon: '🗣️', isTTS: true },
+      { id: 'nova',    name: 'Nova',    description: 'Soft & friendly',       icon: '🗣️', isTTS: true },
     ],
   },
   {

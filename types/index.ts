@@ -12,7 +12,7 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   mediaUrl?: string;
-  mediaType?: 'image';
+  mediaType?: 'image' | 'audio';
   attachments?: Omit<Attachment, 'data' | 'isText'>[];
   timestamp: string;
 }
