@@ -28,7 +28,7 @@ interface Props {
 
 export function ProviderRail({ active, onSelect }: Props) {
   const accentHex = useAccent();
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <div
