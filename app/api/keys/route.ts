@@ -57,7 +57,7 @@ export async function POST(req: Request) {
     const userId = await ensureUserInDb(session);
 
     const rawKey = `aion_${randomBytes(32).toString('hex')}`;
-    const prefix = rawKey.slice(0, 12);
+    const prefix = rawKey.slice(0, 10);
     const keyHash = hashKey(rawKey);
 
     const { rows } = await db.query<{ id: string }>(

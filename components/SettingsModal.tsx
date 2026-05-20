@@ -552,6 +552,25 @@ const TUTORIAL_TOPICS = [
 ] as const;
 
 // ─── Main settings modal ──────────────────────────────────────────────────────
+function copyToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+  }
+  fallbackCopy(text);
+  return Promise.resolve();
+}
+
+function fallbackCopy(text: string) {
+  const el = document.createElement('textarea');
+  el.value = text;
+  el.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
+  document.body.appendChild(el);
+  el.focus();
+  el.select();
+  document.execCommand('copy');
+  document.body.removeChild(el);
+}
+
 export function SettingsModal({ onClose }: Props) {
   const { data: session } = useSession();
   const { isDark, toggle } = useTheme();
@@ -709,7 +728,7 @@ export function SettingsModal({ onClose }: Props) {
     const token = await getInviteToken(orgId);
     if (!token) return;
     const url = `${window.location.origin}/invite/${token}`;
-    await navigator.clipboard.writeText(url);
+    await copyToClipboard(url);
     setLinkCopied((p) => ({ ...p, [orgId]: true }));
     setTimeout(() => setLinkCopied((p) => ({ ...p, [orgId]: false })), 2000);
   };
@@ -1020,7 +1039,7 @@ export function SettingsModal({ onClose }: Props) {
                         <code className="flex-1 text-xs break-all" style={{ color: 'var(--ui-text-1)' }}>{newKeyResult}</code>
                         <button
                           onClick={async () => {
-                            await navigator.clipboard.writeText(newKeyResult);
+                            await copyToClipboard(newKeyResult);
                             setKeyCopied(true);
                             setTimeout(() => setKeyCopied(false), 2000);
                           }}

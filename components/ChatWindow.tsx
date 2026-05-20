@@ -27,6 +27,24 @@ interface Props {
   onConversationUpdate: (conv: Conversation) => void;
 }
 
+function copyToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+  }
+  fallbackCopy(text);
+  return Promise.resolve();
+}
+function fallbackCopy(text: string) {
+  const el = document.createElement('textarea');
+  el.value = text;
+  el.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
+  document.body.appendChild(el);
+  el.focus();
+  el.select();
+  document.execCommand('copy');
+  document.body.removeChild(el);
+}
+
 export function ChatWindow({ conversation, category, defaultModelId, onConversationUpdate }: Props) {
   useSession();
   const accentHex = useAccent();
@@ -1169,7 +1187,7 @@ const MessageBubble = memo(function MessageBubble({ message, modelId, theme, onR
 function UserCopyButton({ content, theme }: { content: string; theme: ProviderTheme }) {
   const [copied, setCopied] = useState(false);
   const handle = async () => {
-    await navigator.clipboard.writeText(content);
+    await copyToClipboard(content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -1211,7 +1229,7 @@ function MessageActions({ content, theme, onRegenerate, versionEntry, onNavigate
 
   const handleCopy = async () => {
     const plainText = content.replace(/```[\s\S]*?```/g, '[code]').replace(/[#*`_~]/g, '');
-    await navigator.clipboard.writeText(plainText);
+    await copyToClipboard(plainText);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -1349,7 +1367,7 @@ function MessageActions({ content, theme, onRegenerate, versionEntry, onNavigate
 function CodeCopyButton({ content, theme }: { content: string; theme: ProviderTheme }) {
   const [copied, setCopied] = useState(false);
   const handle = async () => {
-    await navigator.clipboard.writeText(content);
+    await copyToClipboard(content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
