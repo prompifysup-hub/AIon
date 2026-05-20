@@ -13,7 +13,7 @@ export async function POST(req: Request) {
     const apiKey = process.env.HUGGINGFACE_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
-        { error: 'Music generation needs a free HuggingFace API key. Get one at huggingface.co/join, then add HUGGINGFACE_API_KEY=hf_xxx to .env.local and restart the server.' },
+        { error: 'Add your free HuggingFace token to .env.local as HUGGINGFACE_API_KEY=hf_xxx, then restart the dev server. Get a free token at huggingface.co/settings/tokens' },
         { status: 503 },
       );
     }
@@ -25,19 +25,24 @@ export async function POST(req: Request) {
 
     const hfModel = HF_MODEL[model] ?? 'facebook/musicgen-small';
 
-    const res = await fetch(`https://api-inference.huggingface.co/models/${hfModel}`, {
+    // Use the newer HuggingFace router endpoint (replaces api-inference.huggingface.co)
+    const res = await fetch(`https://router.huggingface.co/hf-inference/models/${hfModel}`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
+        Accept: 'audio/*',
       },
       body: JSON.stringify({ inputs: prompt }),
     });
 
     if (res.status === 503) {
       const data = await res.json().catch(() => ({})) as { estimated_time?: number };
-      const wait = data.estimated_time ? ` Model loading, try again in ~${Math.ceil(data.estimated_time)}s.` : ' Model is loading, try again in 20–30 seconds.';
-      return NextResponse.json({ error: `Model is warming up.${wait}` }, { status: 503 });
+      const sec = data.estimated_time ? Math.ceil(data.estimated_time) : 30;
+      return NextResponse.json(
+        { error: `Model is loading — try again in ~${sec} seconds.` },
+        { status: 503 },
+      );
     }
 
     if (!res.ok) {
