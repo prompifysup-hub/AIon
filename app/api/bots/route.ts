@@ -13,9 +13,10 @@ export async function GET() {
       id: string; slug: string; name: string; description: string | null;
       avatar_url: string | null; category: string | null; is_system_bot: boolean;
       usage_count: string; like_count: string; tags: string[] | null;
+      creator_name: string | null;
     }>(
       `SELECT id, slug, name, description, avatar_url, category, is_system_bot,
-              usage_count, like_count, tags
+              usage_count, like_count, tags, creator_name
        FROM bots
        WHERE is_public = TRUE AND is_active = TRUE
        ORDER BY is_system_bot DESC, usage_count DESC`,
@@ -46,6 +47,7 @@ export async function GET() {
         likeCount: Number(b.like_count),
         tags: b.tags ?? [],
         isFavorite: favoriteIds.has(String(b.id)),
+        creatorName: b.creator_name ?? 'Community',
       })),
     );
   } catch (err) {

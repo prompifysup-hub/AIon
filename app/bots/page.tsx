@@ -17,6 +17,7 @@ interface Bot {
   likeCount: number;
   tags: string[];
   isFavorite: boolean;
+  creatorName: string;
 }
 
 interface Review {
@@ -209,6 +210,42 @@ function ReportModal({ botId, onClose }: { botId: string; onClose: () => void })
   );
 }
 
+function BotAvatar({ url, name, size = 40 }: { url: string | null; name: string; size?: number }) {
+  const [failed, setFailed] = useState(false);
+  const isUrl = url && (url.startsWith('http://') || url.startsWith('https://'));
+  if (isUrl && !failed) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={url}
+        alt={name}
+        width={size}
+        height={size}
+        onError={() => setFailed(true)}
+        className="rounded-xl object-contain shrink-0"
+        style={{ width: size, height: size, background: 'var(--ui-bg-card-hover)' }}
+      />
+    );
+  }
+  const seed = name.charCodeAt(0) % 6;
+  const gradients = [
+    'linear-gradient(135deg,#6366f1,#8b5cf6)',
+    'linear-gradient(135deg,#3b82f6,#06b6d4)',
+    'linear-gradient(135deg,#ec4899,#f97316)',
+    'linear-gradient(135deg,#10b981,#3b82f6)',
+    'linear-gradient(135deg,#f59e0b,#ef4444)',
+    'linear-gradient(135deg,#8b5cf6,#ec4899)',
+  ];
+  return (
+    <div
+      className="rounded-xl flex items-center justify-center shrink-0 text-white font-bold"
+      style={{ width: size, height: size, background: gradients[seed], fontSize: size * 0.4 }}
+    >
+      {name[0].toUpperCase()}
+    </div>
+  );
+}
+
 function BotCard({
   bot,
   onToggleFavorite,
@@ -222,65 +259,76 @@ function BotCard({
   onReport: (id: string) => void;
   onChat: (slug: string) => void;
 }) {
+  const isNew = bot.tags.includes('new');
+  const badge = !bot.isSystemBot
+    ? null
+    : { label: 'OFFICIAL', bg: 'rgba(59,130,246,0.15)', color: '#60a5fa', border: 'rgba(59,130,246,0.35)' };
+
   return (
     <div
-      className="rounded-2xl p-4 flex flex-col gap-3 transition-all hover:-translate-y-0.5"
+      className="rounded-2xl p-4 flex flex-col gap-3 transition-all duration-150 cursor-pointer group"
       style={{ background: 'var(--ui-bg-card)', border: '1px solid var(--ui-border)' }}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--ui-input-border)')}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--ui-border)')}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-3">
-          <div
-            className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0"
-            style={{ background: 'var(--ui-bg-card-hover)' }}
-          >
-            {bot.avatarUrl ?? '🤖'}
+      {/* Top row: avatar + name + heart */}
+      <div className="flex items-start gap-3">
+        <BotAvatar url={bot.avatarUrl} name={bot.name} size={40} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <p className="text-sm font-semibold truncate" style={{ color: 'var(--ui-text-1)' }}>{bot.name}</p>
+            {isNew && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded font-bold tracking-wide uppercase"
+                style={{ background: 'rgba(16,185,129,0.15)', color: '#34d399', border: '1px solid rgba(16,185,129,0.3)' }}>
+                NEW
+              </span>
+            )}
           </div>
-          <div>
-            <p className="text-sm font-semibold" style={{ color: 'var(--ui-text-1)' }}>{bot.name}</p>
-            {bot.category && (
-              <span
-                className="text-[10px] px-1.5 py-0.5 rounded-full"
-                style={{ background: 'var(--ui-bg-card-hover)', color: 'var(--ui-text-3)' }}
-              >
-                {CATEGORY_LABELS[bot.category] ?? bot.category}
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <span className="text-xs truncate" style={{ color: 'var(--ui-text-3)' }}>{bot.creatorName}</span>
+            {badge && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded font-bold tracking-wide uppercase shrink-0"
+                style={{ background: badge.bg, color: badge.color, border: `1px solid ${badge.border}` }}>
+                {badge.label}
               </span>
             )}
           </div>
         </div>
         <button
-          onClick={() => onToggleFavorite(bot.id, bot.isFavorite)}
-          className="p-1.5 rounded-lg transition-colors shrink-0"
+          onClick={(e) => { e.stopPropagation(); onToggleFavorite(bot.id, bot.isFavorite); }}
+          className="p-1.5 rounded-lg transition-colors shrink-0 mt-0.5"
           style={{ color: bot.isFavorite ? '#EF4444' : 'var(--ui-text-3)' }}
-          title={bot.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+          title={bot.isFavorite ? 'Remove favorite' : 'Favorite'}
         >
           <Heart size={14} fill={bot.isFavorite ? '#EF4444' : 'none'} />
         </button>
       </div>
 
-      <p className="text-xs line-clamp-2" style={{ color: 'var(--ui-text-2)' }}>
-        {bot.description ?? 'No description'}
+      {/* Description */}
+      <p className="text-xs leading-relaxed line-clamp-2 flex-1" style={{ color: 'var(--ui-text-2)' }}>
+        {bot.description ?? 'No description available.'}
       </p>
 
-      <div className="flex items-center justify-between mt-auto">
+      {/* Bottom row: stats + actions */}
+      <div className="flex items-center justify-between pt-1" style={{ borderTop: '1px solid var(--ui-border)' }}>
         <div className="flex items-center gap-3 text-xs" style={{ color: 'var(--ui-text-3)' }}>
-          <span>{bot.usageCount} uses</span>
-          <button
-            onClick={() => onOpenReviews(bot)}
-            className="flex items-center gap-1 hover:underline"
-          >
+          <span>{bot.usageCount.toLocaleString()} uses</span>
+          <button onClick={(e) => { e.stopPropagation(); onOpenReviews(bot); }}
+            className="flex items-center gap-1 hover:underline">
             <Star size={11} fill="#F59E0B" style={{ color: '#F59E0B' }} />
-            {bot.likeCount}
+            {bot.likeCount.toLocaleString()}
           </button>
-          <button onClick={() => onReport(bot.id)} title="Report" className="hover:text-red-400">
+          <button onClick={(e) => { e.stopPropagation(); onReport(bot.id); }}
+            className="hover:text-red-400 transition-colors" title="Report">
             <Flag size={11} />
           </button>
         </div>
         <button
           onClick={() => onChat(bot.slug)}
-          className="px-3 py-1.5 rounded-lg text-xs font-medium text-white"
+          className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-opacity hover:opacity-85"
           style={{ background: 'linear-gradient(135deg,#8B5CF6,#3B82F6)' }}
         >
-          Chat
+          Chat →
         </button>
       </div>
     </div>
