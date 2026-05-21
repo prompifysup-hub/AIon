@@ -77,10 +77,11 @@ export const categories: CategoryInfo[] = [
     emoji: '🎬',
     color: '#10B981',
     models: [
-      // Video generation
-      { id: 'video-turbo',                           name: 'Video Gen',         description: 'Generate AI video clips', icon: '🎬', isVideoGen: true },
-      { id: 'video-cinematic',                       name: 'Cinematic',         description: 'Cinematic quality video', icon: '🎥', isVideoGen: true },
-      { id: 'video-animation',                       name: 'Animation',         description: 'Animated style video',    icon: '✨', isVideoGen: true },
+      // Video generation — diverse providers
+      { id: 'openai/sora-2',          name: 'Sora 2',        description: 'OpenAI text-to-video',     icon: '⬛', isVideoGen: true },
+      { id: 'openai/sora-2-pro',      name: 'Sora 2 Pro',    description: 'OpenAI high-quality video',icon: '⬛', isVideoGen: true },
+      { id: 'google/veo-3-fast',      name: 'Veo 3 Fast',    description: 'Google fast video gen',    icon: '🎬', isVideoGen: true },
+      { id: 'google/veo-3',           name: 'Veo 3',         description: 'Google cinematic video',   icon: '🎥', isVideoGen: true },
       // Video analysis (text models)
       { id: 'openai/gpt-4o',                        name: 'GPT-4o Vision',     description: 'Analyze & describe video', icon: '🟢' },
       { id: 'google/gemini-2.0-flash-001',           name: 'Gemini Vision',     description: 'Video understanding',     icon: '✨' },

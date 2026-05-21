@@ -11,6 +11,7 @@ export interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  modelId?: string;        // model that generated this message
   mediaUrl?: string;
   mediaFrames?: string[];  // for video storyboard (array of image URLs)
   mediaType?: 'image' | 'audio' | 'abc' | 'video';

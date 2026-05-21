@@ -69,7 +69,7 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [msgVersions, setMsgVersions] = useState<Map<string, { versions: string[]; idx: number }>>(new Map());
   const [feedbackRatings, setFeedbackRatings] = useState<Map<string, number>>(new Map());
-  const [videoLoadingId, setVideoLoadingId] = useState<string | null>(null);
+  const [videoLoadingId] = useState<string | null>(null); // kept for storyboard legacy messages
 
   const convIdRef = useRef<string>(conversation?.id ?? crypto.randomUUID());
   const convCreatedAtRef = useRef<string>(conversation?.createdAt ?? new Date().toISOString());
@@ -106,7 +106,6 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
     setAttachments([]);
     setMsgVersions(new Map());
     setFeedbackRatings(new Map());
-    setVideoLoadingId(null);
     window.speechSynthesis?.cancel();
     recognitionRef.current?.stop();
     setIsListening(false);
@@ -185,7 +184,6 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
     abortRef.current?.abort();
     setIsStreaming(false);
     setIsThinking(false);
-    setVideoLoadingId(null);
   };
 
   const toggleMic = useCallback(() => {
@@ -282,7 +280,7 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
       const assistantId = crypto.randomUUID();
       const withAssistant: Message[] = [
         ...newMessages,
-        { id: assistantId, role: 'assistant', content: '', timestamp: new Date().toISOString() },
+        { id: assistantId, role: 'assistant', content: '', modelId, timestamp: new Date().toISOString() },
       ];
       setMessages(withAssistant);
       setIsThinking(true);
@@ -309,10 +307,12 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
 
       const MUSIC_RE = /\b(generat|creat|compos|make|produc|play).{0,30}(music|song|melody|tune|jazz|classical|pop|ambient|folk|beat|track|audio)\b|\b(music|song|melody|tune|jazz|classical|ambient|folk)\b/i;
       const SPEECH_RE = /\b(speak|say|read\s+aloud|text.to.speech|tts|convert.{0,20}(to\s+)?(speech|audio|voice|mp3)|voice\s+over|narrat)\b/i;
-      const VIDEO_VERB_RE = /^(generate|create|make|produce|render|animate)\b/i;
+      const VIDEO_VERB_RE = /\b(generate|create|make|produce|render|animate)\b/i;
       const VIDEO_NOUN_RE = /\b(video|clip|animation|movie|film|reel|timelapse|motion|animated)\b/i;
       const isTTSRequest = selectedModelInfo?.isTTS || SPEECH_RE.test(content.trim());
       const isMusicGenRequest = selectedModelInfo?.isMusicGen || (category === 'audio' && MUSIC_RE.test(content.trim()) && !isTTSRequest);
+      // In the video category, any isVideoGen model always generates; analysis models
+      // generate when both a creation verb + a video noun appear anywhere in the prompt.
       const isVideoGenRequest = (selectedModelInfo?.isVideoGen ?? false) ||
         (category === 'video' && VIDEO_VERB_RE.test(trimmed) && VIDEO_NOUN_RE.test(trimmed));
 
@@ -411,7 +411,6 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
       }
 
       if (isVideoGenRequest) {
-        let apiSuccess = false;
         try {
           const res = await fetch('/api/generate/video', {
             method: 'POST',
@@ -419,27 +418,24 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
             body: JSON.stringify({ prompt: content.trim(), model: modelId }),
             signal: abortRef.current.signal,
           });
-          const data = await res.json() as { frames?: string[]; error?: string };
+          const data = await res.json() as { url?: string; error?: string };
           if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
           const label = content.trim().slice(0, 60) + (content.trim().length > 60 ? '…' : '');
           const patch: Partial<Message> = {
             content: `🎬 *"${label}"*`,
-            mediaFrames: data.frames,
+            mediaUrl: data.url,
             mediaType: 'video',
           };
-          setIsThinking(false);
-          setVideoLoadingId(assistantId); // keep isStreaming=true until first frame loads
           updateAssistant(patch);
           persistConversation(
             withAssistant.map((m) => (m.id === assistantId ? { ...m, ...patch } : m)),
             modelId,
           );
-          apiSuccess = true;
         } catch (err: unknown) {
           if (err instanceof Error && err.name !== 'AbortError') showError(err.message);
         } finally {
           setIsThinking(false);
-          if (!apiSuccess) setIsStreaming(false);
+          setIsStreaming(false);
         }
         return;
       }
@@ -552,8 +548,8 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
     const existingEntry = msgVersions.get(msgId);
     const allVersions = existingEntry?.versions ?? [targetMsg.content];
 
-    // Clear message (including image/frames) for regeneration
-    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: '', mediaUrl: undefined, mediaFrames: undefined } : m));
+    // Clear message and stamp new modelId for regeneration
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: '', modelId, mediaUrl: undefined, mediaFrames: undefined } : m));
     setIsThinking(true);
     setIsStreaming(true);
     abortRef.current = new AbortController();
@@ -613,26 +609,24 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
           body: JSON.stringify({ prompt: userPrompt, model: modelId }),
           signal: abortRef.current.signal,
         });
-        const data = await res.json() as { frames?: string[]; error?: string };
+        const data = await res.json() as { url?: string; error?: string };
         if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
         const label = userPrompt.slice(0, 60) + (userPrompt.length > 60 ? '…' : '');
         const newContent = `🎬 *"${label}"*`;
         const newVersions = [...allVersions, newContent];
-        setIsThinking(false);
-        setVideoLoadingId(msgId); // keep isStreaming=true until first frame loads
-        update({ content: newContent, mediaFrames: data.frames, mediaType: 'video' });
+        update({ content: newContent, mediaUrl: data.url, mediaFrames: undefined, mediaType: 'video' });
         setMsgVersions(prev => new Map(prev).set(msgId, { versions: newVersions, idx: newVersions.length - 1 }));
         persistConversation(
-          messages.map(m => m.id === msgId ? { ...m, content: newContent, mediaFrames: data.frames, mediaType: 'video' as const } : m),
+          messages.map(m => m.id === msgId ? { ...m, content: newContent, mediaUrl: data.url, mediaFrames: undefined, mediaType: 'video' as const } : m),
           modelId,
         );
-        return; // don't hit finally's setIsStreaming(false)
       } catch (err: unknown) {
         if (err instanceof Error && err.name === 'AbortError') {
-          update({ content: origContent, mediaFrames: targetMsg.mediaFrames, mediaType: origMediaType });
+          update({ content: origContent, mediaUrl: origMediaUrl, mediaType: origMediaType });
         } else {
           update({ content: `⚠️ ${err instanceof Error ? err.message : 'Video generation failed'}` });
         }
+      } finally {
         setIsThinking(false);
         setIsStreaming(false);
       }
@@ -875,7 +869,7 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
                 currentRating={feedbackRatings.get(msg.id)}
                 onVideoLoaded={
                   msg.id === videoLoadingId
-                    ? () => { setVideoLoadingId(null); setIsStreaming(false); }
+                    ? () => { setIsStreaming(false); }
                     : undefined
                 }
               />
@@ -910,19 +904,6 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
 
       <div className="px-4 pb-4 shrink-0">
         <div className="max-w-3xl mx-auto space-y-2">
-          {/* Stop generating — shown when AI is working */}
-          {isStreaming && (
-            <div className="flex justify-center">
-              <button
-                onClick={stop}
-                className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold text-white transition-opacity hover:opacity-85 active:scale-95"
-                style={{ background: '#EF4444' }}
-              >
-                <StopCircle size={15} />
-                Stop generating
-              </button>
-            </div>
-          )}
           <div className="flex items-center gap-2 flex-wrap">
             {category === 'document' ? (
               /* Document type pills */
@@ -1105,16 +1086,27 @@ export function ChatWindow({ conversation, category, defaultModelId, onConversat
               <Mic size={15} />
             </button>
 
-            <button
-              onClick={() => sendMessage(input)}
-              disabled={isStreaming || (!input.trim() && attachments.length === 0)}
-              className={`shrink-0 w-8 h-8 flex items-center justify-center rounded-xl disabled:opacity-30 disabled:cursor-not-allowed text-white mb-0.5${theme.isRainbow ? ' rainbow-bg' : ' transition-colors'}`}
-              style={theme.isRainbow ? {} : { background: theme.primaryColor }}
-              onMouseEnter={(e) => { if (!theme.isRainbow && !isStreaming) e.currentTarget.style.background = theme.primaryHover; }}
-              onMouseLeave={(e) => { if (!theme.isRainbow) e.currentTarget.style.background = theme.primaryColor; }}
-            >
-              <Send size={14} />
-            </button>
+            {isStreaming ? (
+              <button
+                onClick={stop}
+                className="shrink-0 w-8 h-8 flex items-center justify-center rounded-xl text-white mb-0.5 transition-opacity hover:opacity-80 active:scale-95"
+                style={{ background: '#EF4444' }}
+                title="Stop generating"
+              >
+                <StopCircle size={16} />
+              </button>
+            ) : (
+              <button
+                onClick={() => sendMessage(input)}
+                disabled={!input.trim() && attachments.length === 0}
+                className={`shrink-0 w-8 h-8 flex items-center justify-center rounded-xl disabled:opacity-30 disabled:cursor-not-allowed text-white mb-0.5${theme.isRainbow ? ' rainbow-bg' : ' transition-colors'}`}
+                style={theme.isRainbow ? {} : { background: theme.primaryColor }}
+                onMouseEnter={(e) => { if (!theme.isRainbow) e.currentTarget.style.background = theme.primaryHover; }}
+                onMouseLeave={(e) => { if (!theme.isRainbow) e.currentTarget.style.background = theme.primaryColor; }}
+              >
+                <Send size={14} />
+              </button>
+            )}
           </div>
           <p className="text-center text-[11px]" style={{ color: 'var(--ui-text-3)' }}>
             Enter to send · Shift+Enter for new line · Drop files to upload
@@ -1269,7 +1261,7 @@ const MessageBubble = memo(function MessageBubble({ message, modelId, theme, onR
     <div className="flex gap-3">
       <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5"
         style={{ background: 'var(--ui-bg-card)' }}>
-        <ModelLogo modelId={modelId} size={20} />
+        <ModelLogo modelId={message.modelId ?? modelId} size={20} />
       </div>
       <div className="flex-1 min-w-0 space-y-1">
         {message.content && (
@@ -1286,7 +1278,10 @@ const MessageBubble = memo(function MessageBubble({ message, modelId, theme, onR
         {message.mediaType === 'abc' && message.mediaUrl && (
           <ABCPlayer notation={message.mediaUrl} theme={theme} />
         )}
-        {message.mediaType === 'video' && message.mediaFrames && message.mediaFrames.length > 0 && (
+        {message.mediaType === 'video' && message.mediaUrl && (
+          <VideoPlayer url={message.mediaUrl} theme={theme} />
+        )}
+        {message.mediaType === 'video' && !message.mediaUrl && message.mediaFrames && message.mediaFrames.length > 0 && (
           <StoryboardPlayer frames={message.mediaFrames} theme={theme} onFirstLoaded={onVideoLoaded} />
         )}
         <MessageActions
@@ -1722,6 +1717,46 @@ function AudioPlayer({ url, theme }: { url: string; theme: ProviderTheme }) {
           ↓ Download
         </a>
       </div>
+    </div>
+  );
+}
+
+function VideoPlayer({ url, theme }: { url: string; theme: ProviderTheme }) {
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  return (
+    <div className="mt-2 rounded-xl overflow-hidden border" style={{ borderColor: 'var(--ui-border)', background: '#000', maxWidth: 560 }}>
+      {status === 'loading' && (
+        <div className="flex items-center justify-center gap-2 py-10" style={{ color: '#aaa' }}>
+          <Loader2 size={18} className="animate-spin" />
+          <span className="text-sm">Loading video…</span>
+        </div>
+      )}
+      {status === 'error' && (
+        <div className="flex flex-col items-center gap-2 py-8 px-4" style={{ color: '#f87171' }}>
+          <span className="text-sm">Video failed to load.</span>
+          <a href={url} target="_blank" rel="noopener noreferrer"
+            className="text-xs underline" style={{ color: theme.primaryColor }}>
+            Open video directly ↗
+          </a>
+        </div>
+      )}
+      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+      <video
+        src={url}
+        controls
+        playsInline
+        className={`w-full ${status !== 'ready' ? 'hidden' : ''}`}
+        style={{ display: status === 'ready' ? 'block' : 'none' }}
+        onCanPlay={() => setStatus('ready')}
+        onError={() => setStatus('error')}
+      />
+      {status === 'ready' && (
+        <div className="flex justify-end px-3 py-1.5" style={{ background: 'var(--ui-bg-card)' }}>
+          <a href={url} download="video.mp4" className="text-xs hover:underline" style={{ color: theme.primaryColor }}>
+            ↓ Download MP4
+          </a>
+        </div>
+      )}
     </div>
   );
 }

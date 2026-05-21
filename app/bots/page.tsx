@@ -287,7 +287,7 @@ function BotCard({
           <div className="flex items-center gap-1.5 mt-0.5">
             <span className="text-xs truncate" style={{ color: 'var(--ui-text-3)' }}>{bot.creatorName}</span>
             {badge && (
-              <span className="text-[9px] px-1.5 py-0.5 rounded font-bold tracking-wide uppercase shrink-0"
+              <span className="text-[8px] px-1 py-px rounded font-bold tracking-wide uppercase shrink-0"
                 style={{ background: badge.bg, color: badge.color, border: `1px solid ${badge.border}` }}>
                 {badge.label}
               </span>
